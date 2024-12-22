@@ -24,7 +24,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'UPDATE_TRANSLATION') {
-        extensionInstance.sendTranslationToPanel(message.data.selectedText, message.data.translation);
+        extensionInstance.sendTranslationToPanel(message.data.selectedText);
         sendResponse({ success: true });
         return true;
     }
@@ -69,7 +69,7 @@ class TranslationExtension {
     public usePanel: boolean = true;
     public useTooltip: boolean = false;
     public useFullMode: boolean = false;
-    private translationCache: Map<string, string> = new Map();  // 번역 캐시
+    private translationCache: Map<string, TranslationResponse> = new Map();  // 타입 수정
     private dictionaryCache: Map<string, any> = new Map();      // 사전 캐시
     private debounceTime: number = 300;  // 디바운스 시간 증가
     public autoOpenPanel: boolean = false;  // 자동 오픈 모드 추가
@@ -94,7 +94,7 @@ class TranslationExtension {
                 this.applyFullMode();
             }
             
-            // 자동 오픈 모드가 활성화되어 있으면 패널 생성
+            // 자동 픈 모드가 활성화되어 있으면 패널 생성
             if (this.autoOpenPanel) {
                 this.createTranslationBar();
             }
@@ -119,47 +119,16 @@ class TranslationExtension {
 
     private async fetchTranslationAndGrammar(text: string): Promise<TranslationResponse> {
         try {
-            const targetLanguage = await chrome.storage.sync.get('targetLanguage');
-            const targetLang = targetLanguage.targetLanguage || 'ko';
-
-            logger.log('content', 'Fetching translation', { text, targetLang });
-
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CONFIG.CLAUDE_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify({
-                    model: 'claude-3-sonnet-20240229',
-                    max_tokens: 1000,
-                    messages: [{
-                        role: 'user',
-                        content: `Detect the language of the following text and translate it to ${targetLang}. Then analyze its grammar structure and provide definitions for key words or phrases.
-                        
-Original text: "${text}"
-
-Please respond in the following JSON format only:
-{
-    "translation": "[Translation to ${targetLang}]",
-    "grammar": "[Grammar explanation in ${targetLang}]",
-    "definition": "[Key words/phrases explanation in ${targetLang}]"
-}`
-                    }]
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-            }
-
-            const data = await response.json() as ClaudeResponse;
-            logger.log('content', 'Received translation response');
-
-            const parsedResponse = JSON.parse(data.content[0].text) as TranslationResponse;
+            const sourceLang = await this.detectLanguage(text);
+            const translation = await this.translateText(text, sourceLang);
             
-            return parsedResponse;
+            return {
+                translation,
+                grammar: '',
+                definition: '',
+                words: [],
+                idioms: []
+            };
         } catch (error) {
             logger.log('content', 'Translation API error', error);
             throw error;
@@ -256,32 +225,38 @@ Please respond in the following JSON format only:
         return;
     }
 
-    public async sendTranslationToPanel(text: string, translation?: TranslationResponse): Promise<void> {
+    public async sendTranslationToPanel(text: string): Promise<void> {
         try {
+            let translation = this.translationCache.get(text);
             if (!translation) {
-                const translatedText = await this.googleTranslate(text);
+                const sourceLang = await this.detectLanguage(text);
+                const translatedText = await this.translateText(text, sourceLang);
                 const words = await this.analyzeWords(text);
                 
                 translation = {
                     translation: translatedText,
                     grammar: '',
                     definition: '',
-                    words: words,
+                    words,
                     idioms: []
                 };
+                this.translationCache.set(text, {
+                    translation: translatedText,
+                    grammar: '',
+                    definition: '',
+                    words,
+                    idioms: []
+                });
             }
 
-            logger.log('content', 'Sending to panel', { text, translation });
-            const response = await chrome.runtime.sendMessage({
-                type: 'SEND_TO_PANEL',
-                data: {
-                    selectedText: text,
-                    translation
-                }
-            });
-            logger.log('content', 'Send response', response);
+            if (TranslationExtension.panelWindow?.id) {
+                await chrome.tabs.sendMessage(TranslationExtension.panelWindow.id, {
+                    type: 'TRANSLATION_RESULT',
+                    data: { text, ...translation }
+                });
+            }
         } catch (error) {
-            logger.log('content', 'Error sending to panel', error);
+            logger.log('content', 'Failed to send translation to panel', error);
         }
     }
 
@@ -404,14 +379,10 @@ Please respond in the following JSON format only:
         logger.log('content', 'Full page content saved', { length: content.length });
     }
 
-    private async googleTranslate(text: string): Promise<string> {
+    private async googleTranslate(text: string, targetLang: string): Promise<string> {
         try {
-            // 저장된 타겟 언어 가져오기
-            const { targetLanguage } = await chrome.storage.sync.get('targetLanguage');
-            const tl = targetLanguage || 'ko';  // 기본값은 한국어
-            
             const response = await fetch(
-                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`
+                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`
             );
             const data = await response.json();
             return data[0][0][0];
@@ -447,9 +418,9 @@ Please respond in the following JSON format only:
             if (originalText.length < 2) continue;
 
             try {
-                const translation = await this.googleTranslate(originalText);
+                const sourceLang = await this.detectLanguage(originalText);
+                const translation = await this.translateText(originalText, sourceLang);
                 
-                // 원문과 번역문이 일한 경우 건너뛰기
                 if (originalText.toLowerCase() === translation.toLowerCase()) {
                     continue;
                 }
@@ -463,7 +434,7 @@ Please respond in the following JSON format only:
                     margin: ${getComputedStyle(element).margin};
                 `;
 
-                // 원본 요소의 스타일�� 복사
+                // 원본 요소의 스타일 복사
                 const originalElement = element.cloneNode(true) as HTMLElement;
                 
                 // 번역 요소 생성
@@ -568,7 +539,7 @@ Please respond in the following JSON format only:
         // 요소에 툴팁 표시 중임을 표시
         element.setAttribute('data-has-tooltip', 'true');
 
-        // 툴팁 제거
+        // 툴팁 거
         const removeTooltip = () => {
             tooltipDiv.remove();
             element.removeEventListener('mouseleave', removeTooltip);
@@ -579,45 +550,14 @@ Please respond in the following JSON format only:
     }
 
     // 패널 표시 최적화
-    private async showTranslationPanel(text: string, translatedText: string): Promise<void> {
+    private async showTranslationPanel(text: string): Promise<void> {
         try {
-            // 패널이 없으면 생성
             if (!TranslationExtension.panelWindow?.id) {
                 await this.createTranslationBar();
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            // 먼저 기본 번역 결과를 보여줌
-            await this.sendTranslationToPanel(text, {
-                translation: translatedText,
-                grammar: '',
-                definition: '',
-                words: [],
-                idioms: []
-            });
-
-            // 단어 분석은 비동기적으로 처리
-            setTimeout(async () => {
-                try {
-                    let words = this.dictionaryCache.get(text);
-                    if (!words) {
-                        words = await this.analyzeWords(text);
-                        this.dictionaryCache.set(text, words);
-                    }
-
-                    // 단어 분석이 완료되면 UI 업데이트
-                    await this.sendTranslationToPanel(text, {
-                        translation: translatedText,
-                        grammar: '',
-                        definition: '',
-                        words,
-                        idioms: []
-                    });
-                } catch (error) {
-                    logger.log('content', 'Error analyzing words', error);
-                }
-            }, 0);
-
+            await this.sendTranslationToPanel(text);
         } catch (error) {
             logger.log('content', 'Error showing translation panel', error);
         }
@@ -637,7 +577,7 @@ Please respond in the following JSON format only:
         this.mouseEnterHandler(textElement, text);
     };
 
-    // 텍스트를 포함한 가장 가까운 유효한 소 찾기
+    // 텍��트를 포함한 가장 가까운 유효한 소 찾기
     private findClosestTextElement(element: HTMLElement): HTMLElement | null {
         const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'];
         
@@ -663,25 +603,62 @@ Please respond in the following JSON format only:
 
         this.debounceTimer = window.setTimeout(async () => {
             try {
-                // 캐시된 번역 확인
-                let translatedText = this.translationCache.get(text);
-                if (!translatedText) {
-                    translatedText = await this.googleTranslate(text);
-                    this.translationCache.set(text, translatedText);
+                let translation = this.translationCache.get(text);
+                if (!translation) {
+                    const sourceLang = await this.detectLanguage(text);
+                    const translatedText = await this.translateText(text, sourceLang);
+                    translation = {
+                        translation: translatedText,
+                        grammar: '',
+                        definition: '',
+                        words: [],
+                        idioms: []
+                    };
+                    this.translationCache.set(text, translation);
                 }
 
                 if (this.useTooltip) {
-                    this.showTooltip(element, translatedText);
+                    this.showTooltip(element, translation.translation);
                 }
                 
                 if (this.usePanel || this.autoOpenPanel) {
-                    await this.showTranslationPanel(text, translatedText);
+                    await this.showTranslationPanel(text);
                 }
             } catch (error) {
                 logger.log('content', 'Error in mouseenter handler', error);
             }
         }, this.debounceTime);
     };
+
+    private async translateText(text: string, sourceLang: string): Promise<string> {
+        try {
+            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+            const nativeLang = settings.nativeLanguage || 'ko';
+            const learningLang = settings.learningLanguage || 'en';
+
+            // 원본 텍스트의 언어가 학습 언어와 같으면 모국어로 번역
+            // 그렇지 않으면 학습 언어로 번역
+            const targetLang = sourceLang === learningLang ? nativeLang : learningLang;
+
+            const translation = await this.googleTranslate(text, targetLang);
+            return translation;
+        } catch (error) {
+            logger.log('content', 'Translation error', error);
+            return text;
+        }
+    }
+
+    private async detectLanguage(text: string): Promise<string> {
+        try {
+            const response = await fetch(
+                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text)}`
+            );
+            const data = await response.json();
+            return data[2] || 'en';
+        } catch (error) {
+            return 'en';
+        }
+    }
 }
 
 // content.ts 파일 상단에 즉시 실행 함수 추가

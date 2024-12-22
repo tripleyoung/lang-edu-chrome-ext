@@ -7,27 +7,21 @@ const PopupPanel: React.FC = () => {
     const [usePanel, setUsePanel] = useState(true);
     const [useTooltip, setUseTooltip] = useState(false);
     const [useFullMode, setUseFullMode] = useState(false);
-    const [targetLanguage, setTargetLanguage] = useState('ko');
-    const [currentLanguage, setCurrentLanguage] = useState<Language>('en');
-    const [autoOpenPanel, setAutoOpenPanel] = useState(false);
+    const [nativeLanguage, setNativeLanguage] = useState<Language>('ko');
+    const [learningLanguage, setLearningLanguage] = useState<Language>('en');
 
     useEffect(() => {
-        // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage', 'uiLanguage', 'autoOpenPanel'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'nativeLanguage', 'learningLanguage'], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
             setUseFullMode(result.useFullMode ?? false);
-            setTargetLanguage(result.targetLanguage ?? 'ko');
-            
-            // UI 언어 설정
-            const browserLang = navigator.language.split('-')[0] as Language;
-            setCurrentLanguage(result.uiLanguage || (messages[browserLang] ? browserLang : 'en'));
-            setAutoOpenPanel(result.autoOpenPanel ?? false);
+            setNativeLanguage((result.nativeLanguage as Language) || 'ko');
+            setLearningLanguage((result.learningLanguage as Language) || 'en');
         });
     }, []);
 
     const t = (key: keyof typeof messages['en']) => {
-        return messages[currentLanguage][key];
+        return messages[nativeLanguage][key];
     };
 
     const handlePanelToggle = async () => {
@@ -68,37 +62,6 @@ const PopupPanel: React.FC = () => {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
                 settings: { usePanel, useTooltip, useFullMode: newValue }
-            });
-        }
-    };
-
-    const handleLanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newValue = e.target.value;
-        setTargetLanguage(newValue);
-        await chrome.storage.sync.set({ targetLanguage: newValue });
-    };
-
-    const handleUILanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newValue = e.target.value as Language;
-        setCurrentLanguage(newValue);
-        await chrome.storage.sync.set({ uiLanguage: newValue });
-    };
-
-    const handleAutoOpenPanelToggle = async () => {
-        const newValue = !autoOpenPanel;
-        setAutoOpenPanel(newValue);
-        await chrome.storage.sync.set({ autoOpenPanel: newValue });
-        
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
-                type: 'UPDATE_SETTINGS',
-                settings: { 
-                    usePanel, 
-                    useTooltip, 
-                    useFullMode,
-                    autoOpenPanel: newValue 
-                }
             });
         }
     };
@@ -161,10 +124,14 @@ const PopupPanel: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('uiLanguage')}</span>
+                    <span className="text-sm">{t('nativeLanguage')}</span>
                     <select 
-                        value={currentLanguage}
-                        onChange={handleUILanguageChange}
+                        value={nativeLanguage}
+                        onChange={e => {
+                            const newValue = e.target.value as Language;
+                            setNativeLanguage(newValue);
+                            chrome.storage.sync.set({ nativeLanguage: newValue });
+                        }}
                         className="px-4 py-2 rounded-lg bg-gray-700 text-white"
                     >
                         <option value="ko">한국어</option>
@@ -174,35 +141,20 @@ const PopupPanel: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('targetLanguage')}</span>
+                    <span className="text-sm">{t('learningLanguage')}</span>
                     <select 
-                        value={targetLanguage}
-                        onChange={handleLanguageChange}
+                        value={learningLanguage}
+                        onChange={e => {
+                            const newValue = e.target.value as Language;
+                            setLearningLanguage(newValue);
+                            chrome.storage.sync.set({ learningLanguage: newValue });
+                        }}
                         className="px-4 py-2 rounded-lg bg-gray-700 text-white"
                     >
-                        <option value="ko">한국어</option>
                         <option value="en">English</option>
                         <option value="ja">日本語</option>
-                        <option value="zh">中文</option>
-                        <option value="es">Español</option>
-                        <option value="fr">Français</option>
+                        <option value="ko">한국어</option>
                     </select>
-                </div>
-
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">자동 패널 열기</span>
-                    <button
-                        onClick={handleAutoOpenPanelToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${autoOpenPanel 
-                                ? 'bg-blue-600 hover:bg-blue-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
-                    >
-                        {autoOpenPanel ? '활성화' : '비활성화'}
-                    </button>
                 </div>
 
                 <div className="mt-6">
