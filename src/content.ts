@@ -14,6 +14,7 @@ class TranslationExtension {
     private observer: MutationObserver | null = null;
     private processTimeout: number | null = null;
     private translationBar: HTMLDivElement | null = null;
+    private debounceTimer: number | null = null;
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -158,38 +159,45 @@ Please respond in the following JSON format only:
             let originalColor = '';
 
             htmlEl.addEventListener('mouseenter', async () => {
-                try {
-                    // 색상 변경 시도
-                    try {
-                        originalColor = window.getComputedStyle(htmlEl).color;
-                        htmlEl.style.color = '#ff6b00';
-                        htmlEl.style.transition = 'color 0.3s ease';
-                    } catch (e) {
-                        logger.log('content', 'Color change failed', e);
-                    }
-
-                    // 텍스트 내용 가져오기
-                    const text = Array.from(htmlEl.childNodes)
-                        .filter(node => node.nodeType === Node.TEXT_NODE)
-                        .map(node => node.textContent?.trim())
-                        .filter(text => text && text.length > 0)
-                        .join(' ');
-
-                    if (text) {
-                        await this.createTranslationBar();
-                        this.showPanel();
-
-                        try {
-                            const translation = await this.fetchTranslationAndGrammar(text);
-                            await this.sendTranslationToPanel(text, translation);
-                        } catch (error) {
-                            await this.sendTranslationToPanel(text);
-                            logger.log('content', 'Translation failed', error);
-                        }
-                    }
-                } catch (error) {
-                    logger.log('content', 'Error in mouseenter handler', error);
+                // 디바운스 처리
+                if (this.debounceTimer) {
+                    clearTimeout(this.debounceTimer);
                 }
+
+                this.debounceTimer = window.setTimeout(async () => {
+                    try {
+                        // 색상 변경 시도
+                        try {
+                            originalColor = window.getComputedStyle(htmlEl).color;
+                            htmlEl.style.color = '#ff6b00';
+                            htmlEl.style.transition = 'color 0.3s ease';
+                        } catch (e) {
+                            logger.log('content', 'Color change failed', e);
+                        }
+
+                        // 텍스트 내용 가져오기
+                        const text = Array.from(htmlEl.childNodes)
+                            .filter(node => node.nodeType === Node.TEXT_NODE)
+                            .map(node => node.textContent?.trim())
+                            .filter(text => text && text.length > 0)
+                            .join(' ');
+
+                        if (text) {
+                            await this.createTranslationBar();
+                            this.showPanel();
+
+                            try {
+                                const translation = await this.fetchTranslationAndGrammar(text);
+                                await this.sendTranslationToPanel(text, translation);
+                            } catch (error) {
+                                await this.sendTranslationToPanel(text);
+                                logger.log('content', 'Translation failed', error);
+                            }
+                        }
+                    } catch (error) {
+                        logger.log('content', 'Error in mouseenter handler', error);
+                    }
+                }, 100); // 100ms 디바운스
             });
 
             htmlEl.addEventListener('mouseleave', () => {
@@ -245,13 +253,18 @@ Please respond in the following JSON format only:
     }
 
     private async createTranslationBar(): Promise<void> {
+        // 이미 패널이 있으면 새로 생성하지 않음
+        if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
+            return;
+        }
+
         try {
             const response = await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
             if (!response || !response.success) {
-                console.error('Failed to open translation panel');
+                logger.log('content', 'Failed to open translation panel');
             }
         } catch (error) {
-            console.error('Error opening translation panel:', error);
+            logger.log('content', 'Error opening translation panel', error);
         }
     }
 
