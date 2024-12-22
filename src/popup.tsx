@@ -6,13 +6,15 @@ const PopupPanel: React.FC = () => {
     const [usePanel, setUsePanel] = useState(true);
     const [useTooltip, setUseTooltip] = useState(false);
     const [useFullMode, setUseFullMode] = useState(false);
+    const [targetLanguage, setTargetLanguage] = useState('ko');
 
     useEffect(() => {
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage'], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
             setUseFullMode(result.useFullMode ?? false);
+            setTargetLanguage(result.targetLanguage ?? 'ko');
         });
     }, []);
 
@@ -56,6 +58,12 @@ const PopupPanel: React.FC = () => {
                 settings: { usePanel, useTooltip, useFullMode: newValue }
             });
         }
+    };
+
+    const handleLanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newValue = e.target.value;
+        setTargetLanguage(newValue);
+        await chrome.storage.sync.set({ targetLanguage: newValue });
     };
 
     const openTranslationPanel = async () => {
@@ -113,6 +121,22 @@ const PopupPanel: React.FC = () => {
                     >
                         {useFullMode ? '활성화' : '비활성화'}
                     </button>
+                </div>
+
+                <div className="flex items-center justify-between mt-4">
+                    <span className="text-sm">번역 언어</span>
+                    <select 
+                        value={targetLanguage}
+                        onChange={handleLanguageChange}
+                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
+                    >
+                        <option value="ko">한국어</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                        <option value="zh">中文</option>
+                        <option value="es">Español</option>
+                        <option value="fr">Français</option>
+                    </select>
                 </div>
 
                 <div className="mt-6">

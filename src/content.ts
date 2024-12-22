@@ -233,15 +233,6 @@ Please respond in the following JSON format only:
 
                 this.debounceTimer = window.setTimeout(async () => {
                     try {
-                        // 색상 변경 시도
-                        try {
-                            originalColor = window.getComputedStyle(htmlEl).color;
-                            htmlEl.style.color = '#ff6b00';
-                            htmlEl.style.transition = 'color 0.3s ease';
-                        } catch (e) {
-                            logger.log('content', 'Color change failed', e);
-                        }
-
                         const text = Array.from(htmlEl.childNodes)
                             .filter(node => node.nodeType === Node.TEXT_NODE)
                             .map(node => node.textContent?.trim())
@@ -302,13 +293,6 @@ Please respond in the following JSON format only:
             // 이벤트 리스너 저장
             this.eventListeners.set(htmlEl, mouseEnterHandler);
             htmlEl.addEventListener('mouseenter', mouseEnterHandler);
-            htmlEl.addEventListener('mouseleave', () => {
-                if (originalColor) {
-                    htmlEl.style.color = originalColor;
-                }
-            });
-
-            element.setAttribute('data-translation-processed', 'true');
         });
     }
 
@@ -466,7 +450,7 @@ Please respond in the following JSON format only:
                     font-weight: ${originalStyles.fontWeight};
                 `;
 
-                // 번역 텍스트 (오른쪽)
+                // ��� 텍스트 (오른쪽)
                 const translationDiv = document.createElement('div');
                 translationDiv.style.cssText = `
                     color: #666;
@@ -538,8 +522,12 @@ Please respond in the following JSON format only:
 
     private async googleTranslate(text: string): Promise<string> {
         try {
+            // 저장된 타겟 언어 가져오기
+            const { targetLanguage } = await chrome.storage.sync.get('targetLanguage');
+            const tl = targetLanguage || 'ko';  // 기본값은 한국어
+            
             const response = await fetch(
-                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=${encodeURIComponent(text)}`
+                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`
             );
             const data = await response.json();
             return data[0][0][0];
@@ -558,7 +546,7 @@ Please respond in the following JSON format only:
         });
         this.eventListeners.clear();
         
-        // 텍스트 요소 다시 처리
+        // 텍스트 요소 시 처리
         this.processTextElements();
         logger.log('content', `Translation display mode set to ${showInTooltip ? 'tooltip' : 'panel'}`);
     }
@@ -577,6 +565,11 @@ Please respond in the following JSON format only:
             try {
                 const translation = await this.googleTranslate(originalText);
                 
+                // 원문과 번역문이 동일한 경우 건너뛰기
+                if (originalText.toLowerCase() === translation.toLowerCase()) {
+                    continue;
+                }
+                
                 const container = document.createElement('div');
                 container.className = 'translation-full-mode';
                 container.style.cssText = `
@@ -593,7 +586,7 @@ Please respond in the following JSON format only:
                 const translationElement = document.createElement('div');
                 translationElement.textContent = translation;
                 translationElement.style.cssText = `
-                    color: #666;
+                    color: #ff6b00;
                     font-style: italic;
                     font-size: 0.9em;
                 `;
