@@ -139,19 +139,22 @@ class TranslationExtension {
     public processTextElements(): void {
         if (!this.isEnabled) return;
 
-        // 기존 음성 버튼들 제거
-        document.querySelectorAll('.translation-audio-button').forEach(btn => btn.remove());
-
         // 설정 확인
         chrome.storage.sync.get(['useAudioFeature'], (result) => {
-            if (!result.useAudioFeature) return;
+            if (!result.useAudioFeature) {
+                // 음성 기능이 비활성화된 경우에만 버튼 제거
+                document.querySelectorAll('.translation-audio-button').forEach(btn => btn.remove());
+                return;
+            }
 
-            // 텍스트 요소들을 찾아서 음성 버튼 추가
+            // 텍스트 요소들을 찾아서 음성 버튼 추가 (이미 버튼이 있는 경우 건너뛰기)
             const textElements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th');
             textElements.forEach(element => {
-                const text = this.getElementText(element as HTMLElement);
-                if (text && text.length > 2) {
-                    this.addAudioButton(element as HTMLElement, text);
+                if (!element.querySelector('.translation-audio-button')) {  // 이미 버튼이 있으면 건너뛰기
+                    const text = this.getElementText(element as HTMLElement);
+                    if (text && text.length > 2) {
+                        this.addAudioButton(element as HTMLElement, text);
+                    }
                 }
             });
         });
@@ -274,7 +277,7 @@ class TranslationExtension {
                     await chrome.windows.get(TranslationExtension.panelWindow.id);
                     return; // 패널이 존재하면 리턴
                 } catch {
-                    // ���널이 존재하지 않으면 계속 진행
+                    // 패널이 존재하지 않으면 계속 진행
                 }
             }
 
@@ -311,7 +314,7 @@ class TranslationExtension {
     }
 
     private hidePanel(): void {
-        // ��우스가 벗어날 때는 패널을 숨기지 않음
+        // 마우스가 벗어날 때는 패널을 숨기지 않음
         // 사용자가 직접 닫거나 이지를 떠날 때만 닫힘
         return;
     }
