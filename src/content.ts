@@ -164,21 +164,29 @@ class TranslationExtension {
         document.body.addEventListener('mouseover', this.handleMouseOver);
     }
 
-    private addAudioButton(element: HTMLElement, text: string): void {
-        // 이미 버튼이 있으면 건너뛰기
+    private async addAudioButton(element: HTMLElement, text: string): Promise<void> {
         if (element.querySelector('.translation-audio-button')) return;
 
-        chrome.storage.sync.get(['nativeLanguage', 'learningLanguage'], async (settings) => {
+        try {
+            const sourceLang = await this.detectLanguage(text);
+            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
             const nativeLang = settings.nativeLanguage || 'ko';
             const learningLang = settings.learningLanguage || 'en';
-            
-            // 원본 텍스트의 언어 감지
-            const sourceLang = await this.detectLanguage(text);
-            
-            // 음성 재생 시 사용할 언어 결정
-            const isNativeText = sourceLang === nativeLang;
-            const targetLang = isNativeText ? learningLang : nativeLang;
-            
+
+            // 번역된 텍스트를 미리 가져와서 캐시에 저장
+            let translatedText = '';
+            if (sourceLang === nativeLang) {
+                translatedText = await this.translateText(text, learningLang);
+                // 캐시에 저장
+                this.translationCache.set(text, {
+                    translation: translatedText,
+                    grammar: '',
+                    definition: '',
+                    words: [],
+                    idioms: []
+                });
+            }
+
             const button = document.createElement('button');
             button.className = 'translation-audio-button';
             button.innerHTML = '🔊';
@@ -195,37 +203,63 @@ class TranslationExtension {
                 margin-left: 4px;
             `;
 
-            button.addEventListener('mouseover', () => {
-                button.style.opacity = '1';
-            });
-
-            button.addEventListener('mouseout', () => {
-                button.style.opacity = '0.7';
-            });
+            button.addEventListener('mouseover', () => button.style.opacity = '1');
+            button.addEventListener('mouseout', () => button.style.opacity = '0.7');
 
             button.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                
-                // 원본 텍스트가 모국어인 경우, 번역된 텍스트의 음성 재생
-                if (isNativeText) {
-                    const translation = await this.translateText(text, targetLang);
-                    const utterance = new SpeechSynthesisUtterance(translation);
-                    utterance.lang = targetLang === 'en' ? 'en-US' : 
-                                    targetLang === 'ko' ? 'ko-KR' : 
-                                    targetLang === 'ja' ? 'ja-JP' : 'en-US';
+                try {
+                    let textToSpeak = text;
+                    let langToUse = sourceLang;
+
+                    if (sourceLang === nativeLang) {
+                        // 캐시된 번역 확인
+                        let translatedText = '';
+                        const cached = this.translationCache.get(text);
+                        if (cached) {
+                            translatedText = cached.translation;
+                        } else {
+                            // 캐시에 없으면 새로 번역
+                            translatedText = await this.translateText(text, learningLang);
+                            // 번역 결과 캐시에 저장
+                            this.translationCache.set(text, {
+                                translation: translatedText,
+                                grammar: '',
+                                definition: '',
+                                words: [],
+                                idioms: []
+                            });
+                        }
+                        textToSpeak = translatedText;
+                        langToUse = learningLang;
+                    }
+
+                    const speechLang = langToUse === 'en' ? 'en-US' : 
+                                      langToUse === 'ko' ? 'ko-KR' : 
+                                      langToUse === 'ja' ? 'ja-JP' : 'en-US';
+
+                    // 더 자세한 로그 추가
+                    logger.log('content', 'Playing audio', { 
+                        originalText: text,
+                        translatedText: textToSpeak, 
+                        originalLang: sourceLang,
+                        targetLang: langToUse,
+                        speechLang: speechLang,
+                        isNative: sourceLang === nativeLang
+                    });
+
+                    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                    utterance.lang = speechLang;
                     speechSynthesis.speak(utterance);
-                } else {
-                    // 원본 텍스트가 학습 언어인 경우, 원본 텍스트의 음성 재생
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.lang = sourceLang === 'en' ? 'en-US' : 
-                                    sourceLang === 'ko' ? 'ko-KR' : 
-                                    sourceLang === 'ja' ? 'ja-JP' : 'en-US';
-                    speechSynthesis.speak(utterance);
+                } catch (error) {
+                    logger.log('content', 'Error playing audio', error);
                 }
             });
 
             element.appendChild(button);
-        });
+        } catch (error) {
+            logger.log('content', 'Error adding audio button', error);
+        }
     }
 
     private setupObserver(): void {
@@ -706,7 +740,7 @@ class TranslationExtension {
                     this.translationCache.set(text, translation);
                 }
 
-                // 툴팁 표시 (번역된 텍스트만)
+                // 툴팁 표시 (번역된 텍스트)
                 if (this.useTooltip) {
                     this.showTooltip(element, text, translation);
                 }
