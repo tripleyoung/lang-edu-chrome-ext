@@ -1,0 +1,57 @@
+.translation-container {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 4px;
+    background: #f8f9fa;
+    position: relative;
+}
+
+.translation-result {
+    margin-top: 10px;
+    padding: 10px;
+    border-left: 3px solid #007bff;
+    background: white;
+}
+
+.toggle-translation {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    padding: 5px 10px;
+    border: 1px solid #007bff;
+    border-radius: 4px;
+    background: white;
+    color: #007bff;
+    cursor: pointer;
+}
+
+.toggle-translation:hover {
+    background: #007bff;
+    color: white;
+}
+
+.loading-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.translation-loading {
+    text-align: center;
+    padding: 10px;
+    color: #666;
+}
+
+#token-counter {
+    font-family: monospace;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+} 
