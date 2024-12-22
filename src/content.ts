@@ -4,6 +4,33 @@ import { Logger } from './logger';
 
 const logger = Logger.getInstance();
 
+// content.ts 파일 상단에 전역 리스너 추가
+let extensionInstance: TranslationExtension | null = null;
+
+// 전역 메시지 리스너
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    logger.log('content', 'Received message in global listener', message);
+
+    if (!extensionInstance) {
+        logger.log('content', 'Extension instance not ready');
+        return false;
+    }
+
+    if (message.type === 'SET_READER_MODE') {
+        extensionInstance.setReaderMode(message.enabled);
+        sendResponse({ success: true });
+        return true;
+    }
+
+    if (message.type === 'UPDATE_TRANSLATION') {
+        extensionInstance.sendTranslationToPanel(message.data.selectedText, message.data.translation);
+        sendResponse({ success: true });
+        return true;
+    }
+
+    return true;
+});
+
 class TranslationExtension {
     private static instance: TranslationExtension | null = null;
     private static panelWindow: Window | null = null;
@@ -15,12 +42,15 @@ class TranslationExtension {
     private processTimeout: number | null = null;
     private translationBar: HTMLDivElement | null = null;
     private debounceTimer: number | null = null;
+    private isReaderMode: boolean = false;
+    private eventListeners: Map<HTMLElement, Function> = new Map();  // 이벤트 리스너 저장용
 
     constructor() {
         if (TranslationExtension.instance) {
             return TranslationExtension.instance;
         }
         TranslationExtension.instance = this;
+        extensionInstance = this;  // 전역 변수에 인스턴스 저장
         this.initialize();
         this.createTranslationBar();
     }
@@ -67,7 +97,7 @@ class TranslationExtension {
         const counter = document.getElementById('token-counter');
         if (counter) {
             counter.innerHTML = `
-                <div>사용된 토큰: ${this.totalTokensUsed}</div>
+                <div>용된 토큰: ${this.totalTokensUsed}</div>
                 <div>예상 비용: $${(this.totalTokensUsed * 0.00000163).toFixed(4)}</div>
             `;
         }
@@ -127,8 +157,8 @@ Please respond in the following JSON format only:
         }
     }
 
-    private processTextElements(): void {
-        if (!this.isEnabled) return;
+    public processTextElements(): void {
+        if (!this.isEnabled || this.isReaderMode) return;  // 읽기 모드일 때는 처리하지 않
 
         const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
             // 이미 처리된 요소 제외
@@ -143,7 +173,7 @@ Please respond in the following JSON format only:
             ];
             if (excludeTags.includes(el.tagName)) return false;
 
-            // 직접적인 스트 노드 확인
+            // 직접적인 스트리밍 노드 확인
             const hasText = Array.from(el.childNodes)
                 .filter(node => node.nodeType === Node.TEXT_NODE)
                 .some(node => {
@@ -158,7 +188,12 @@ Please respond in the following JSON format only:
             const htmlEl = element as HTMLElement;
             let originalColor = '';
 
-            htmlEl.addEventListener('mouseenter', async () => {
+            const mouseEnterHandler = async () => {
+                // 읽기 모드일 때는 이벤트 무시
+                if (this.isReaderMode) {
+                    return;
+                }
+
                 // 디바운스 처리
                 if (this.debounceTimer) {
                     clearTimeout(this.debounceTimer);
@@ -166,6 +201,11 @@ Please respond in the following JSON format only:
 
                 this.debounceTimer = window.setTimeout(async () => {
                     try {
+                        // 읽기 모드 체크 한번 더
+                        if (this.isReaderMode) {
+                            return;
+                        }
+
                         // 색상 변경 시도
                         try {
                             originalColor = window.getComputedStyle(htmlEl).color;
@@ -182,7 +222,7 @@ Please respond in the following JSON format only:
                             .filter(text => text && text.length > 0)
                             .join(' ');
 
-                        if (text) {
+                        if (text && !this.isReaderMode) {  // 읽기 모드 한번 더 체크
                             await this.createTranslationBar();
                             this.showPanel();
 
@@ -198,8 +238,11 @@ Please respond in the following JSON format only:
                         logger.log('content', 'Error in mouseenter handler', error);
                     }
                 }, 100); // 100ms 디바운스
-            });
+            };
 
+            // 이벤트 리스너 저장
+            this.eventListeners.set(htmlEl, mouseEnterHandler);
+            htmlEl.addEventListener('mouseenter', mouseEnterHandler);
             htmlEl.addEventListener('mouseleave', () => {
                 if (originalColor) {
                     htmlEl.style.color = originalColor;
@@ -284,7 +327,7 @@ Please respond in the following JSON format only:
         return;
     }
 
-    private async sendTranslationToPanel(text: string, translation?: TranslationResponse): Promise<void> {
+    public async sendTranslationToPanel(text: string, translation?: TranslationResponse): Promise<void> {
         try {
             logger.log('content', 'Sending to panel', { text });
             const response = await chrome.runtime.sendMessage({
@@ -305,7 +348,105 @@ Please respond in the following JSON format only:
             logger.log('content', 'Error sending to panel', error);
         }
     }
+
+    public setReaderMode(enabled: boolean): void {
+        if (enabled) {
+            // 읽기 모드로 전환
+            this.isReaderMode = true;
+            this.isEnabled = false;
+            
+            // 빠른 텍스트 추출
+            const mainContent = document.querySelector('main, article, [role="main"]');
+            let pageContent = mainContent?.textContent || document.body.innerText;
+
+            // 텍스트 정리 및 즉시 전송
+            const cleanedContent = pageContent
+                .replace(/\s+/g, ' ')
+                .split(/[.!?。！？]/g)
+                .filter(line => line.trim().length > 20)
+                .join('\n\n');
+
+            this.sendTranslationToPanel(cleanedContent, {
+                translation: '읽기 모드 활성화됨',
+                grammar: '문법 분석 비활성화됨',
+                definition: '단어 분석 비활성화됨',
+                words: [],
+                idioms: []
+            });
+        } else {
+            // 호버 모드로 전환
+            this.isReaderMode = false;
+            this.isEnabled = true;
+            
+            // 모든 상태 초기화
+            this.eventListeners = new Map();
+            document.querySelectorAll('[data-translation-processed]').forEach(el => {
+                const element = el as HTMLElement;
+                element.removeAttribute('data-translation-processed');
+                element.style.removeProperty('color');
+                element.style.removeProperty('transition');
+            });
+
+            // 호버 모드 메시지 전송
+            this.sendTranslationToPanel('텍스트에 마우스를 올리면 번역이 시작됩니다.', {
+                translation: '호버 모드가 활성화되었습니다.',
+                grammar: '문법 분석이 활성화되었습니다.',
+                definition: '단어 분석이 활성화되었습니다.',
+                words: [],
+                idioms: []
+            });
+
+            // 이벤트 리스너 다시 설정
+            setTimeout(() => this.processTextElements(), 100);
+        }
+    }
+
+    private getVisibleText(node: Node): string {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return node.textContent?.trim() || '';
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return '';
+        }
+
+        const element = node as HTMLElement;
+        if (getComputedStyle(element).display === 'none' || 
+            getComputedStyle(element).visibility === 'hidden') {
+            return '';
+        }
+
+        const texts: string[] = [];
+        element.childNodes.forEach(child => {
+            const text = this.getVisibleText(child);
+            if (text) texts.push(text);
+        });
+
+        return texts.join(' ');
+    }
+
+    public getPageContent(): string {
+        const mainContent = this.getVisibleText(document.body);
+        return mainContent
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .join('\n\n');
+    }
 }
 
-// 확 프로그램 인스턴스 생성
-new TranslationExtension(); 
+// content.ts 파일 상단에 즉시 실행 함수 추가
+(async function init() {
+    try {
+        // DOM이 준비될 때까지 대기
+        if (document.readyState === 'loading') {
+            await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve));
+        }
+
+        logger.log('content', 'Initializing extension');
+        new TranslationExtension();
+        logger.log('content', 'Extension initialized');
+    } catch (error) {
+        logger.log('content', 'Failed to initialize extension', error);
+    }
+})(); 

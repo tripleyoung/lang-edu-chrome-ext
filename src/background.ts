@@ -58,6 +58,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         return true;
     }
+
+    if (message.type === 'TOGGLE_READER_MODE') {
+        // Promise를 처리하기 위해 즉시 실행 async 함수 사용
+        (async () => {
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.id) {
+                try {
+                    await chrome.tabs.sendMessage(tab.id, {
+                        type: 'SET_READER_MODE',
+                        enabled: message.enabled
+                    });
+                    sendResponse({ success: true });
+                } catch (error) {
+                    logger.log('background', 'Failed to toggle reader mode', error);
+                    sendResponse({ success: false });
+                }
+            }
+        })();
+        return true;
+    }
+
     return true;
 });
 
@@ -71,10 +92,10 @@ async function createNewPanel(sendResponse: (response?: any) => void) {
         chrome.windows.create({
             url: 'panel.html',
             type: 'popup',
-            width: 800,
-            height: 400,
-            left: Math.max(0, primaryDisplay.bounds.width - 820),
-            top: Math.max(0, primaryDisplay.bounds.height - 450),
+            width: 1000,
+            height: 800,
+            left: Math.max(0, primaryDisplay.bounds.width - 1020),
+            top: Math.max(0, primaryDisplay.bounds.height - 850),
             focused: true
         }, (window) => {
             if (window) {

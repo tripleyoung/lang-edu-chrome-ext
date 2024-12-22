@@ -9,15 +9,22 @@
         "devtools",
         "windows",
         "system.display",
-        "scripting"
+        "scripting",
+        "tabGroups",
+        "tabs",
+        "webNavigation"
     ],
     "host_permissions": [
-        "https://api.anthropic.com/*"
+        "https://api.anthropic.com/*",
+        "<all_urls>",
+        "chrome-extension://*/*"
     ],
     "web_accessible_resources": [
         {
             "resources": [
-                "panel.html"
+                "panel.html",
+                "dist/*",
+                "styles.css"
             ],
             "matches": [
                 "<all_urls>"
@@ -25,7 +32,7 @@
         }
     ],
     "content_security_policy": {
-        "extension_pages": "script-src 'self'; object-src 'self'"
+        "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
     },
     "devtools_page": "devtools.html",
     "action": {
@@ -41,7 +48,10 @@
             ],
             "js": [
                 "dist/content.js"
-            ]
+            ],
+            "run_at": "document_start",
+            "all_frames": true,
+            "match_about_blank": true
         }
     ],
     "background": {

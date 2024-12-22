@@ -1,3 +1,9 @@
+declare global {
+    namespace chrome.tabs {
+        function toggleReaderMode(tabId: number): Promise<void>;
+    }
+}
+
 // 타입 정의
 export interface Word {
     word: string;
