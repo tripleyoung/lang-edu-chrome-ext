@@ -12,7 +12,8 @@
         "scripting",
         "tabGroups",
         "tabs",
-        "webNavigation"
+        "webNavigation",
+        "contextMenus"
     ],
     "host_permissions": [
         "https://api.anthropic.com/*",

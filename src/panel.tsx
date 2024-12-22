@@ -119,7 +119,6 @@ const TranslationPanel: React.FC = () => {
                     </button>
                 </div>
 
-                {!isReaderMode && (
                     <div className="grid grid-cols-2 gap-6">
                         <div>
                             <h3 className="text-xl font-bold text-yellow-400 mb-3">원문</h3>
@@ -134,18 +133,7 @@ const TranslationPanel: React.FC = () => {
                             </div>
                         </div>
                     </div>
-                )}
-
-                {isReaderMode && (
-                    <div className="space-y-6">
-                        <div className="bg-gray-800 rounded-lg p-6">
-                            <h3 className="text-xl font-bold text-yellow-400 mb-4">전체 텍스트</h3>
-                            <div className="whitespace-pre-wrap text-gray-200 leading-relaxed max-h-[70vh] overflow-y-auto">
-                                {translationData.selectedText}
-                            </div>
-                        </div>
-                    </div>
-                )}
+               
             </div>
         </div>
     );

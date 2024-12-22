@@ -17,44 +17,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'SET_READER_MODE') {
-        logger.log('content', 'Processing SET_READER_MODE', { enabled: message.enabled });
-
-        if (message.enabled) {
-            // 전체 텍스트 추출 시도
-            try {
-                logger.log('content', 'Starting text extraction');
-                const mainContent = document.querySelector('main, article, [role="main"]');
-                logger.log('content', 'Found main content', { exists: !!mainContent });
-
-                // 텍스트 추출 방법 변경
-                const pageContent = mainContent 
-                    ? Array.from(mainContent.querySelectorAll('p, h1, h2, h3, h4, h5, h6'))
-                        .map(el => el.textContent?.trim())
-                        .filter(text => text)
-                        .join('\n\n')
-                    : document.body.innerText;
-
-                logger.log('content', 'Extracted full text', { 
-                    length: pageContent.length,
-                    sample: pageContent.substring(0, 100) + '...'
-                });
-
-                // 전역 변수에 저장
-                extensionInstance.setFullPageContent(pageContent);
-
-                // 패널로 전송
-                extensionInstance.sendTranslationToPanel(pageContent, {
-                    translation: '읽기 모드 활성화됨',
-                    grammar: '문법 분석 활성화됨',
-                    definition: '단어 분석 비활성화됨',
-                    words: [],
-                    idioms: []
-                });
-            } catch (error) {
-                logger.log('content', 'Error extracting text', error);
-            }
-        }
-
+        // 읽기 모드 설정만 하고 패널은 건드리지 않음
         extensionInstance.setReaderMode(message.enabled);
         sendResponse({ success: true });
         return true;
@@ -89,7 +52,7 @@ class TranslationExtension {
             return TranslationExtension.instance;
         }
         TranslationExtension.instance = this;
-        extensionInstance = this;  // 전역 변수에 인��턴스 저장
+        extensionInstance = this;  // 전역 변수에 인스턴스 저장
         this.initialize();
         this.createTranslationBar();
     }
@@ -197,12 +160,13 @@ Please respond in the following JSON format only:
     }
 
     public processTextElements(): void {
-        if (!this.isEnabled || this.isReaderMode) return;  // 읽기 모드일 때는 처리하지 않
+        if (!this.isEnabled) return;  // 읽기 모드와 상관없이 호버 가능하도록
 
         const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
             // 이미 처리된 요소 제외
             if (el.hasAttribute('data-translation-processed')) return false;
             if (el.closest('.translation-container')) return false;
+            if (el.closest('.reader-mode-container')) return false;  // 읽기 모드 컨테이너는 제외
 
             // 제외할 태그들
             const excludeTags = [
@@ -228,23 +192,12 @@ Please respond in the following JSON format only:
             let originalColor = '';
 
             const mouseEnterHandler = async () => {
-                // 읽기 모드일 때는 이벤트 자체를 무시
-                if (this.isReaderMode) {
-                    return;
-                }
-
-                // 디바운스 처리
                 if (this.debounceTimer) {
                     clearTimeout(this.debounceTimer);
                 }
 
                 this.debounceTimer = window.setTimeout(async () => {
                     try {
-                        // 읽기 모드 체크 한번 더
-                        if (this.isReaderMode) {
-                            return;
-                        }
-
                         // 색상 변경 시도
                         try {
                             originalColor = window.getComputedStyle(htmlEl).color;
@@ -254,25 +207,23 @@ Please respond in the following JSON format only:
                             logger.log('content', 'Color change failed', e);
                         }
 
-                        // 텍버 모드일 때만 텍스트 전송
-                        if (!this.isReaderMode) {
-                            const text = Array.from(htmlEl.childNodes)
-                                .filter(node => node.nodeType === Node.TEXT_NODE)
-                                .map(node => node.textContent?.trim())
-                                .filter(text => text && text.length > 0)
-                                .join(' ');
+                        // 텍스트 추출 및 번역 패널로 전송 (읽기 모드와 상관없이)
+                        const text = Array.from(htmlEl.childNodes)
+                            .filter(node => node.nodeType === Node.TEXT_NODE)
+                            .map(node => node.textContent?.trim())
+                            .filter(text => text && text.length > 0)
+                            .join(' ');
 
-                            if (text) {
-                                await this.createTranslationBar();
-                                this.showPanel();
+                        if (text) {
+                            await this.createTranslationBar();
+                            this.showPanel();
 
-                                try {
-                                    const translation = await this.fetchTranslationAndGrammar(text);
-                                    await this.sendTranslationToPanel(text, translation);
-                                } catch (error) {
-                                    await this.sendTranslationToPanel(text);
-                                    logger.log('content', 'Translation failed', error);
-                                }
+                            try {
+                                const translation = await this.fetchTranslationAndGrammar(text);
+                                await this.sendTranslationToPanel(text, translation);
+                            } catch (error) {
+                                await this.sendTranslationToPanel(text);
+                                logger.log('content', 'Translation failed', error);
                             }
                         }
                     } catch (error) {
@@ -395,40 +346,79 @@ Please respond in the following JSON format only:
         logger.log('content', `Reader mode ${enabled ? 'enabled' : 'disabled'}`);
 
         if (enabled) {
-            // 읽기 모드에서는 저장된 전체 텍스트 유지
-            this.sendTranslationToPanel(this.fullPageContent, {
-                translation: '읽기 모드 활성화됨',
-                grammar: '문법 분석 활성화됨',
-                definition: '단어 분석 비활성화됨',
-                words: [],
-                idioms: []
-            });
+            // 페이지의 텍스트만 변경하고 번역 패널은 그대로 유지
+            this.updatePageLayout();
         } else {
-            this.fullPageContent = '';  // 호버 모드로 돌아갈 때 초기화
-            // 호버 모드로 전환
-            this.isReaderMode = false;
-            this.isEnabled = true;
-            
-            // 모든 상태 초기화
-            this.eventListeners = new Map();
-            document.querySelectorAll('[data-translation-processed]').forEach(el => {
-                const element = el as HTMLElement;
-                element.removeAttribute('data-translation-processed');
-                element.style.removeProperty('color');
-                element.style.removeProperty('transition');
-            });
+            // 페이지 새로고침으로 원래 상태로 복구
+            window.location.reload();
+        }
+    }
 
-            // 호버 모드 메시지 전송
-            this.sendTranslationToPanel('텍스트에 마우스를 올리면 번역이 시작됩니다.', {
-                translation: '호버 모드가 활성화되었습니다.',
-                grammar: '문법 분석이 활성화되었습니다.',
-                definition: '단어 분석이 활성화되었습니다.',
-                words: [],
-                idioms: []
-            });
+    private async updatePageLayout(): Promise<void> {
+        try {
+            // 텍스트 요소 처리
+            const textElements = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th'))
+                .filter(el => {
+                    const text = el.textContent?.trim();
+                    return text && text.length > 0 && getComputedStyle(el).display !== 'none';
+                });
 
-            // 이벤트 리스너 다시 설정
-            setTimeout(() => this.processTextElements(), 100);
+            for (const element of textElements) {
+                const originalText = element.textContent?.trim() || '';
+                if (originalText.length < 2) continue;
+
+                const originalStyles = window.getComputedStyle(element);
+                
+                const container = document.createElement('div');
+                container.className = 'reader-mode-container';
+                container.style.cssText = `
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 10px;
+                    margin: ${originalStyles.margin};
+                    padding: ${originalStyles.padding};
+                    font-size: ${originalStyles.fontSize};
+                    line-height: ${originalStyles.lineHeight};
+                `;
+
+                // 원본 텍스트 (왼쪽)
+                const originalDiv = document.createElement('div');
+                originalDiv.textContent = originalText;
+                originalDiv.style.cssText = `
+                    color: ${originalStyles.color};
+                    font-family: ${originalStyles.fontFamily};
+                    font-weight: ${originalStyles.fontWeight};
+                `;
+
+                // 번역 텍스트 (오른쪽)
+                const translationDiv = document.createElement('div');
+                translationDiv.style.cssText = `
+                    color: #666;
+                    font-family: ${originalStyles.fontFamily};
+                    font-style: italic;
+                `;
+                translationDiv.textContent = '번역 중...';
+
+                container.appendChild(originalDiv);
+                container.appendChild(translationDiv);
+                element.replaceWith(container);
+
+                // Google Translate API 호출
+                try {
+                    const response = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=${encodeURIComponent(originalText)}`);
+                    const data = await response.json();
+                    if (data && data[0] && data[0][0]) {
+                        translationDiv.textContent = data[0][0][0];
+                    }
+                } catch (error) {
+                    translationDiv.textContent = '번역 실패';
+                    logger.log('content', 'Translation failed', error);
+                }
+            }
+
+            logger.log('content', 'Page layout updated with translations');
+        } catch (error) {
+            logger.log('content', 'Error updating page layout', error);
         }
     }
 
