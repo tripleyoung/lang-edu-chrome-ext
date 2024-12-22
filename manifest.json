@@ -6,7 +6,10 @@
     "permissions": [
         "activeTab",
         "storage",
-        "devtools"
+        "devtools",
+        "windows",
+        "system.display",
+        "scripting"
     ],
     "host_permissions": [
         "https://api.anthropic.com/*"
@@ -27,5 +30,8 @@
                 "dist/content.js"
             ]
         }
-    ]
+    ],
+    "background": {
+        "service_worker": "dist/background.js"
+    }
 }

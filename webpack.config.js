@@ -6,7 +6,9 @@ module.exports = {
     devtool: 'source-map',
     entry: {
         popup: './src/popup.tsx',
-        content: './src/content.ts'
+        content: './src/content.ts',
+        background: './src/background.ts',
+        panel: './src/panel.ts'
     },
     output: {
         path: path.resolve(__dirname, 'dist'),

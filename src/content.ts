@@ -223,6 +223,7 @@ Please respond in the following JSON format only:
                                     </div>
                                 </div>
                             `;
+                            this.sendTranslationToPanel(this.translationBar.innerHTML);
                         } catch (error) {
                             // 번역 실패 시에도 원본 텍스트는 유지
                             this.translationBar.innerHTML = `
@@ -243,6 +244,7 @@ Please respond in the following JSON format only:
                                     </div>
                                 </div>
                             `;
+                            this.sendTranslationToPanel(this.translationBar.innerHTML);
                         }
                     }
                 } catch (error) {
@@ -303,73 +305,15 @@ Please respond in the following JSON format only:
         });
     }
 
-    private createTranslationBar(): void {
-        // 이미 열린 패널이 있으면 재사용
-        if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
-            TranslationExtension.panelWindow.focus();
-            this.translationBar = TranslationExtension.panelWindow.document.getElementById('translationContent') as HTMLDivElement;
-            return;
-        }
-
-        // 새 패널 생성
-        TranslationExtension.panelWindow = window.open('', 'translationPanel', `
-            width=800,
-            height=400,
-            left=${window.screen.width - 820},
-            top=${window.screen.height - 450},
-            resizable=yes,
-            scrollbars=yes,
-            status=no,
-            location=no,
-            toolbar=no,
-            menubar=no
-        `);
-
-        if (!TranslationExtension.panelWindow) {
-            console.error('팝업이 차단되었습니다.');
-            return;
-        }
-
-        // 패널 윈도우 스타일링
-        TranslationExtension.panelWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>번역 패널</title>
-                <style>
-                    body {
-                        margin: 0;
-                        padding: 20px;
-                        background: rgb(33, 33, 33);
-                        color: white;
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                    }
-                    .translation-bar {
-                        height: 100%;
-                        overflow-y: auto;
-                    }
-                </style>
-            </head>
-            <body>
-                <div id="translationContent"></div>
-            </body>
-            </html>
-        `);
-
-        this.translationBar = TranslationExtension.panelWindow.document.getElementById('translationContent') as HTMLDivElement;
-
-        // 윈도우 닫힐 때 정리
-        TranslationExtension.panelWindow.onbeforeunload = () => {
-            this.translationBar = null;
-            TranslationExtension.panelWindow = null;
-        };
-
-        // 페이지 언로드 시 패널도 닫기
-        window.addEventListener('unload', () => {
-            if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
-                TranslationExtension.panelWindow.close();
+    private async createTranslationBar(): Promise<void> {
+        try {
+            const response = await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
+            if (!response || !response.success) {
+                console.error('Failed to open translation panel');
             }
-        });
+        } catch (error) {
+            console.error('Error opening translation panel:', error);
+        }
     }
 
     // 패널 표시/숨김 메서드 추가
@@ -386,6 +330,22 @@ Please respond in the following JSON format only:
         // 마우스가 벗어났을 때는 패널을 숨기지 않음
         // 사용자가 직접 닫거나 페이지를 떠날 때만 닫힘
         return;
+    }
+
+    private async sendTranslationToPanel(html: string): Promise<void> {
+        try {
+            console.log('Sending translation to panel:', html);  // 디버깅용
+            const response = await chrome.runtime.sendMessage({
+                type: 'SEND_TO_PANEL',
+                html: html
+            });
+            console.log('Send response:', response);  // 디버깅용
+            if (!response?.success) {
+                console.error('Failed to send translation to panel');
+            }
+        } catch (error) {
+            console.error('Failed to send translation to panel:', error);
+        }
     }
 }
 
