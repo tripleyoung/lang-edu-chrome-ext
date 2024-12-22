@@ -46,6 +46,7 @@ class TranslationExtension {
     private isReaderMode: boolean = false;
     private eventListeners: Map<HTMLElement, Function> = new Map();  // 이벤트 리스너 저장용
     private fullPageContent: string = '';  // 전체 텍스트 저장용
+    private showInTooltip: boolean = false;  // 추가
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -215,15 +216,55 @@ Please respond in the following JSON format only:
                             .join(' ');
 
                         if (text) {
-                            await this.createTranslationBar();
-                            this.showPanel();
+                            if (this.showInTooltip) {
+                                // 툴팁 모드
+                                try {
+                                    const translation = await this.googleTranslate(text);
+                                    const tooltipDiv = document.createElement('div');
+                                    tooltipDiv.className = 'translation-tooltip';
+                                    tooltipDiv.style.cssText = `
+                                        position: absolute;
+                                        top: 100%;
+                                        left: 0;
+                                        background-color: rgba(0, 0, 0, 0.8);
+                                        color: white;
+                                        padding: 8px 12px;
+                                        border-radius: 4px;
+                                        font-size: 0.9em;
+                                        z-index: 1000;
+                                        max-width: 300px;
+                                        white-space: pre-wrap;
+                                        margin-top: 5px;
+                                    `;
+                                    tooltipDiv.textContent = translation;
+                                    htmlEl.style.position = 'relative';
+                                    htmlEl.appendChild(tooltipDiv);
 
-                            try {
-                                const translation = await this.fetchTranslationAndGrammar(text);
-                                await this.sendTranslationToPanel(text, translation);
-                            } catch (error) {
-                                await this.sendTranslationToPanel(text);
-                                logger.log('content', 'Translation failed', error);
+                                    const mouseLeaveHandler = () => {
+                                        tooltipDiv.remove();
+                                        htmlEl.removeEventListener('mouseleave', mouseLeaveHandler);
+                                    };
+                                    htmlEl.addEventListener('mouseleave', mouseLeaveHandler);
+                                } catch (error) {
+                                    logger.log('content', 'Tooltip translation failed', error);
+                                }
+                            } else {
+                                // 패널 모드
+                                await this.createTranslationBar();
+                                this.showPanel();
+                                try {
+                                    const translation = await this.googleTranslate(text);
+                                    await this.sendTranslationToPanel(text, {
+                                        translation: translation,
+                                        grammar: '',
+                                        definition: '',
+                                        words: [],
+                                        idioms: []
+                                    });
+                                } catch (error) {
+                                    await this.sendTranslationToPanel(text);
+                                    logger.log('content', 'Panel translation failed', error);
+                                }
                             }
                         }
                     } catch (error) {
@@ -314,7 +355,7 @@ Please respond in the following JSON format only:
     }
 
     private hidePanel(): void {
-        // 마우스가 벗어났을 때는 패널을 숨기지 않음
+        // 마우스가 벗어날 때는 패널을 숨기지 않음
         // 사용자가 직접 닫거나 페이지를 떠날 때만 닫힘
         return;
     }
@@ -349,7 +390,7 @@ Please respond in the following JSON format only:
             // 페이지의 텍스트만 변경하고 번역 패널은 그대로 유지
             this.updatePageLayout();
         } else {
-            // 페이지 새로고침으로 원래 상태로 복구
+            // 페이지 새로고���으로 원래 상태로 복구
             window.location.reload();
         }
     }
@@ -381,7 +422,7 @@ Please respond in the following JSON format only:
                     line-height: ${originalStyles.lineHeight};
                 `;
 
-                // 원본 텍스트 (왼쪽)
+                // 원�� 텍스트 (왼쪽)
                 const originalDiv = document.createElement('div');
                 originalDiv.textContent = originalText;
                 originalDiv.style.cssText = `
@@ -458,6 +499,33 @@ Please respond in the following JSON format only:
     public setFullPageContent(content: string): void {
         this.fullPageContent = content;
         logger.log('content', 'Full page content saved', { length: content.length });
+    }
+
+    private async googleTranslate(text: string): Promise<string> {
+        try {
+            const response = await fetch(
+                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=${encodeURIComponent(text)}`
+            );
+            const data = await response.json();
+            return data[0][0][0];
+        } catch (error) {
+            logger.log('content', 'Google translation failed', error);
+            throw error;
+        }
+    }
+
+    public setTranslationDisplay(showInTooltip: boolean): void {
+        this.showInTooltip = showInTooltip;
+        
+        // 모든 기존 이벤트 리스너 제거 후 다시 등록
+        this.eventListeners.forEach((listener, element) => {
+            element.removeEventListener('mouseenter', listener as any);
+        });
+        this.eventListeners.clear();
+        
+        // 텍스트 요소 다시 처리
+        this.processTextElements();
+        logger.log('content', `Translation display mode set to ${showInTooltip ? 'tooltip' : 'panel'}`);
     }
 }
 

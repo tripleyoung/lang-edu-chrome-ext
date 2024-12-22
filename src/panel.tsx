@@ -15,6 +15,7 @@ const TranslationPanel: React.FC = () => {
     const [translationData, setTranslationData] = useState<TranslationData | null>(null);
     const [isReaderMode, setIsReaderMode] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [showInTooltip, setShowInTooltip] = useState(false);
 
     const toggleReaderMode = async () => {
         try {
@@ -63,6 +64,10 @@ const TranslationPanel: React.FC = () => {
         }
     };
 
+    const toggleDisplayMode = () => {
+        setShowInTooltip(!showInTooltip);
+    };
+
     useEffect(() => {
         logger.log('panel', 'Panel component mounted');
 
@@ -80,60 +85,65 @@ const TranslationPanel: React.FC = () => {
 
     if (!translationData) {
         return (
-            <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
-                <div className="text-center">
-                    <h2 className="text-2xl font-bold text-yellow-400">번역 패널</h2>
-                    <p className="text-gray-400 mt-4">텍스트에 마우스 올리면 번역 결과가 여기에 표시됩니다.</p>
+            <div className="flex items-center justify-center bg-gray-900 text-white" style={{ minHeight: '100vh' }}>
+                <div className="text-center w-full px-4">
+                    <h2 className="text-xl font-bold text-yellow-400 mb-2">번역 패널</h2>
+                    <p className="text-gray-400 text-sm">텍스트에 마우스를 올리면 번역이 시작됩니다.</p>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="p-6 bg-gray-900 text-white min-h-screen">
-            <div className="max-w-6xl mx-auto">
-                <div className="flex justify-end mb-4">
-                    <button
-                        onClick={toggleReaderMode}
-                        disabled={isLoading}
-                        className={`
-                            px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-300
-                            ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}
-                            ${isReaderMode 
-                                ? 'bg-green-600 hover:bg-green-700 text-white' 
-                                : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
-                            }
-                            relative
-                        `}
-                    >
-                        <div className={`
-                            absolute left-2 w-6 h-6 rounded-full transition-all duration-300
-                            flex items-center justify-center
-                            ${isReaderMode ? 'bg-white text-green-600' : 'bg-gray-400 text-white'}
-                        `}>
-                            {isLoading ? '⌛' : '📖'}
-                        </div>
-                        <span className="ml-8">
-                            {isReaderMode ? '읽기 모드 ON' : '읽기 모드 OFF'}
-                        </span>
-                    </button>
-                </div>
+        <div className="flex flex-col bg-gray-900 text-white min-h-screen">
+            <div className="flex-1 flex items-center justify-center">
+                <div className="w-full px-3">
+                    <div className="flex justify-end mb-4 gap-2">
+                        <button
+                            onClick={toggleDisplayMode}
+                            className={`
+                                px-4 py-2 rounded-lg flex items-center gap-2 transition-all duration-300
+                                ${showInTooltip 
+                                    ? 'bg-purple-600 hover:bg-purple-700 text-white' 
+                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                                }
+                            `}
+                        >
+                            💬 {showInTooltip ? '툴팁 모드' : '패널 모드'}
+                        </button>
 
-                    <div className="grid grid-cols-2 gap-6">
-                        <div>
-                            <h3 className="text-xl font-bold text-yellow-400 mb-3">원문</h3>
-                            <div className="bg-gray-800 rounded-lg p-4">
-                                {translationData.selectedText}
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-xl font-bold text-blue-400 mb-3">번역</h3>
-                            <div className="bg-gray-800 rounded-lg p-4">
-                                {translationData.translation.translation}
-                            </div>
-                        </div>
+                        <button
+                            onClick={toggleReaderMode}
+                            disabled={isLoading}
+                            className={`
+                                px-4 py-2 rounded-lg flex items-center gap-2
+                                ${isReaderMode 
+                                    ? 'bg-green-600 hover:bg-green-700 text-white' 
+                                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                                }
+                            `}
+                        >
+                            📖 {isReaderMode ? '읽기 ON' : '읽기 OFF'}
+                        </button>
                     </div>
-               
+
+                    {!showInTooltip && (
+                        <div className="flex flex-col gap-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-yellow-400 mb-2">원문</h3>
+                                <div className="bg-gray-800 rounded p-3 text-sm">
+                                    {translationData.selectedText}
+                                </div>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-blue-400 mb-2">번역</h3>
+                                <div className="bg-gray-800 rounded p-3 text-sm">
+                                    {translationData.translation.translation}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

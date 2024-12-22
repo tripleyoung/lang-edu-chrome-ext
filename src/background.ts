@@ -26,12 +26,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse({ success: true });
                 } else {
                     logger.log('background', 'Creating new panel (existing window not found)');
-                    createNewPanel(sendResponse);
+                    createNewPanel(sendResponse, sender);
                 }
             });
         } else {
             logger.log('background', 'Creating new panel');
-            createNewPanel(sendResponse);
+            createNewPanel(sendResponse, sender);
         }
         return true;
     }
@@ -112,27 +112,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // 새 패널 생성 함수
-async function createNewPanel(sendResponse: (response?: any) => void) {
+async function createNewPanel(sendResponse: (response?: any) => void, sender: chrome.runtime.MessageSender) {
     try {
         const displays = await chrome.system.display.getInfo();
         const primaryDisplay = displays[0];
         
-        logger.log('background', 'Creating new window for panel');
+        // 패널 크기
+        const panelWidth = 1000;
+        const panelHeight = 400;
+        
+        // 화면 중앙 위치 계산
+        const left = Math.round((primaryDisplay.bounds.width - panelWidth) / 2);
+        const top = Math.round((primaryDisplay.bounds.height - panelHeight) / 2);
+
         chrome.windows.create({
             url: 'panel.html',
             type: 'popup',
-            width: 1000,
-            height: 800,
-            left: Math.max(0, primaryDisplay.bounds.width - 1020),
-            top: Math.max(0, primaryDisplay.bounds.height - 850),
-            focused: true
+            width: panelWidth,
+            height: panelHeight,
+            left: left,
+            top: top
         }, (window) => {
             if (window) {
                 translationPanel = window;
-                logger.log('background', 'Panel window created', { windowId: window.id });
                 sendResponse({ success: true });
             } else {
-                logger.log('background', 'Failed to create panel window');
                 sendResponse({ success: false });
             }
         });
