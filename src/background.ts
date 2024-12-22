@@ -135,15 +135,6 @@ async function createNewPanel(sendResponse: (response?: any) => void, sender: ch
         }, (window) => {
             if (window) {
                 translationPanel = window;
-                // content script에 패널 창 참조 전달
-                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                    if (tabs[0]?.id) {
-                        chrome.tabs.sendMessage(tabs[0].id, {
-                            type: 'PANEL_CREATED',
-                            windowId: window.id
-                        });
-                    }
-                });
                 sendResponse({ success: true });
             } else {
                 sendResponse({ success: false });

@@ -19,12 +19,50 @@ export interface Idiom {
     audioUrl?: string;
 }
 
+export interface DictionaryEntry {
+    word: string;
+    phonetics: {
+        text?: string;
+        audio?: string;
+    }[];
+    meanings: {
+        partOfSpeech: string;
+        definitions: {
+            definition: string;
+            example?: string;
+            synonyms: string[];
+            antonyms: string[];
+        }[];
+        synonyms: string[];
+        antonyms: string[];
+    }[];
+}
+
+interface Definition {
+    definition: string;
+    example?: string;
+    synonyms: string[];
+    antonyms: string[];
+}
+
+interface Meaning {
+    partOfSpeech: string;
+    definitions: Definition[];
+    synonyms: string[];
+    antonyms: string[];
+}
+
 export interface TranslationResponse {
     translation: string;
     grammar: string;
     definition: string;
-    words: Word[];
-    idioms: Idiom[];
+    words: {
+        word: string;
+        phonetic?: string;
+        audioUrl?: string;
+        meanings: Meaning[];
+    }[];
+    idioms: string[];
 }
 
 export interface TokenUsage {

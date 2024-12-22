@@ -1,4 +1,4 @@
-import { TranslationResponse, ClaudeResponse, TextGroup } from './types';
+import { TranslationResponse, ClaudeResponse, TextGroup, DictionaryEntry } from './types';
 import { CONFIG } from './config';
 import { Logger } from './logger';
 
@@ -58,7 +58,6 @@ class TranslationExtension {
     
     private isEnabled: boolean = true;
     private isProcessing: boolean = false;
-    private totalTokensUsed: number = 0;
     private observer: MutationObserver | null = null;
     private processTimeout: number | null = null;
     private translationBar: HTMLDivElement | null = null;
@@ -95,10 +94,6 @@ class TranslationExtension {
     private async initialize(): Promise<void> {
         console.log('Initializing translation extension...');
         
-        if (!document.getElementById('token-counter')) {
-            this.createTokenCounter();
-        }
-        
         if (!this.isReactApp()) {
             this.processTextElements();
             this.setupObserver();
@@ -110,34 +105,6 @@ class TranslationExtension {
 
     private isReactApp(): boolean {
         return !!(document.querySelector('#__next') || document.querySelector('#root'));
-    }
-
-    private createTokenCounter(): void {
-        const counter = document.createElement('div');
-        counter.id = 'token-counter';
-        counter.style.cssText = `
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
-            z-index: 10000;
-        `;
-        document.body.appendChild(counter);
-        this.updateTokenCounter();
-    }
-
-    private updateTokenCounter(): void {
-        const counter = document.getElementById('token-counter');
-        if (counter) {
-            counter.innerHTML = `
-                <div>용된 토큰: ${this.totalTokensUsed}</div>
-                <div>예상 비용: $${(this.totalTokensUsed * 0.00000163).toFixed(4)}</div>
-            `;
-        }
     }
 
     private async fetchTranslationAndGrammar(text: string): Promise<TranslationResponse> {
@@ -181,11 +148,6 @@ Please respond in the following JSON format only:
             logger.log('content', 'Received translation response');
 
             const parsedResponse = JSON.parse(data.content[0].text) as TranslationResponse;
-            
-            if (data.usage) {
-                this.totalTokensUsed += data.usage.input_tokens + data.usage.output_tokens;
-                this.updateTokenCounter();
-            }
             
             return parsedResponse;
         } catch (error) {
@@ -240,10 +202,11 @@ Please respond in the following JSON format only:
                             .join(' ');
 
                         if (text) {
-                            const translation = await this.googleTranslate(text);
-
+                            const translatedText = await this.googleTranslate(text);
+                            const words = await this.analyzeWords(text);
+                            
                             if (this.useTooltip) {
-                                // 툴팁 모드
+                                // 툴팁 드
                                 const tooltipDiv = document.createElement('div');
                                 tooltipDiv.className = 'translation-tooltip';
                                 tooltipDiv.style.cssText = `
@@ -262,7 +225,7 @@ Please respond in the following JSON format only:
                                     margin-top: 5px;
                                     box-sizing: border-box;
                                 `;
-                                tooltipDiv.textContent = translation;
+                                tooltipDiv.textContent = translatedText;
                                 htmlEl.style.position = 'relative';
                                 htmlEl.appendChild(tooltipDiv);
 
@@ -275,11 +238,12 @@ Please respond in the following JSON format only:
                                 // 패널 모드
                                 await this.createTranslationBar();  // 먼저 패널 생성
                                 await this.showPanel();  // 패널 표시
-                                await this.sendTranslationToPanel(text, {  // 번역 전송
-                                    translation: translation,
+                                
+                                await this.sendTranslationToPanel(text, {
+                                    translation: translatedText,
                                     grammar: '',
                                     definition: '',
-                                    words: [],
+                                    words: words,  // 단어 분석 결과 포함
                                     idioms: []
                                 });
                             }
@@ -312,8 +276,7 @@ Please respond in the following JSON format only:
                 }
                 
                 if (target.closest('.translation-container') || 
-                    target.classList?.contains('translation-container') ||
-                    target.id === 'token-counter') {
+                    target.classList?.contains('translation-container')) {
                     return false;
                 }
                 
@@ -381,18 +344,25 @@ Please respond in the following JSON format only:
 
     public async sendTranslationToPanel(text: string, translation?: TranslationResponse): Promise<void> {
         try {
-            logger.log('content', 'Sending to panel', { text });
+            if (!translation) {
+                const translatedText = await this.googleTranslate(text);
+                const words = await this.analyzeWords(text);
+                
+                translation = {
+                    translation: translatedText,
+                    grammar: '',
+                    definition: '',
+                    words: words,
+                    idioms: []
+                };
+            }
+
+            logger.log('content', 'Sending to panel', { text, translation });
             const response = await chrome.runtime.sendMessage({
                 type: 'SEND_TO_PANEL',
                 data: {
                     selectedText: text,
-                    translation: translation || {
-                        translation: '번역 실패',
-                        grammar: '문법 분석 실패',
-                        definition: '정의 분석 실패',
-                        words: [],
-                        idioms: []
-                    }
+                    translation
                 }
             });
             logger.log('content', 'Send response', response);
@@ -450,7 +420,7 @@ Please respond in the following JSON format only:
                     font-weight: ${originalStyles.fontWeight};
                 `;
 
-                // ��� 텍스트 (오른쪽)
+                // 텍스트 (오른쪽)
                 const translationDiv = document.createElement('div');
                 translationDiv.style.cssText = `
                     color: #666;
@@ -598,6 +568,41 @@ Please respond in the following JSON format only:
                 logger.log('content', 'Translation failed for element', error);
             }
         }
+    }
+
+    private async analyzeWords(text: string): Promise<TranslationResponse['words']> {
+        // 텍스트를 단어로 분리
+        const words = text.match(/\b[A-Za-z]+\b/g) || [];
+        const uniqueWords = [...new Set(words)];
+        const results: TranslationResponse['words'] = [];
+
+        // 각 단어에 대해 사전 검색
+        for (const word of uniqueWords) {
+            try {
+                const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word.toLowerCase()}`);
+                if (!response.ok) continue;
+
+                const data: DictionaryEntry[] = await response.json();
+                if (!data.length) continue;
+
+                const entry = data[0];
+                results.push({
+                    word: entry.word,
+                    phonetic: entry.phonetics.find(p => p.text)?.text,
+                    audioUrl: entry.phonetics.find(p => p.audio)?.audio,
+                    meanings: entry.meanings.map(meaning => ({
+                        partOfSpeech: meaning.partOfSpeech,
+                        definitions: meaning.definitions,
+                        synonyms: meaning.synonyms,
+                        antonyms: meaning.antonyms
+                    }))
+                });
+            } catch (error) {
+                logger.log('content', `Failed to fetch dictionary data for word: ${word}`, error);
+            }
+        }
+
+        return results;
     }
 }
 
