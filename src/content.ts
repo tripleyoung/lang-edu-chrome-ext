@@ -2,15 +2,21 @@ import { TranslationResponse, ClaudeResponse, TextGroup } from './types';
 import { CONFIG } from './config';
 
 class TranslationExtension {
+    private static instance: TranslationExtension | null = null;
+    private static panelWindow: Window | null = null;
+    
     private isEnabled: boolean = true;
     private isProcessing: boolean = false;
     private totalTokensUsed: number = 0;
     private observer: MutationObserver | null = null;
     private processTimeout: number | null = null;
     private translationBar: HTMLDivElement | null = null;
-    private panelContainer: HTMLDivElement | null = null;
 
     constructor() {
+        if (TranslationExtension.instance) {
+            return TranslationExtension.instance;
+        }
+        TranslationExtension.instance = this;
         this.initialize();
         this.createTranslationBar();
     }
@@ -298,8 +304,15 @@ Please respond in the following JSON format only:
     }
 
     private createTranslationBar(): void {
-        // 독립된 패널을 위한 새 윈도우 생성
-        const panelWindow = window.open('', 'translationPanel', `
+        // 이미 열린 패널이 있으면 재사용
+        if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
+            TranslationExtension.panelWindow.focus();
+            this.translationBar = TranslationExtension.panelWindow.document.getElementById('translationContent') as HTMLDivElement;
+            return;
+        }
+
+        // 새 패널 생성
+        TranslationExtension.panelWindow = window.open('', 'translationPanel', `
             width=800,
             height=400,
             left=${window.screen.width - 820},
@@ -312,13 +325,13 @@ Please respond in the following JSON format only:
             menubar=no
         `);
 
-        if (!panelWindow) {
+        if (!TranslationExtension.panelWindow) {
             console.error('팝업이 차단되었습니다.');
             return;
         }
 
         // 패널 윈도우 스타일링
-        panelWindow.document.write(`
+        TranslationExtension.panelWindow.document.write(`
             <!DOCTYPE html>
             <html>
             <head>
@@ -343,28 +356,38 @@ Please respond in the following JSON format only:
             </html>
         `);
 
-        // 번역 결과를 표시할 요소 저장
-        this.translationBar = panelWindow.document.getElementById('translationContent') as HTMLDivElement;
+        this.translationBar = TranslationExtension.panelWindow.document.getElementById('translationContent') as HTMLDivElement;
 
         // 윈도우 닫힐 때 정리
-        panelWindow.onbeforeunload = () => {
+        TranslationExtension.panelWindow.onbeforeunload = () => {
             this.translationBar = null;
+            TranslationExtension.panelWindow = null;
         };
+
+        // 페이지 언로드 시 패널도 닫기
+        window.addEventListener('unload', () => {
+            if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
+                TranslationExtension.panelWindow.close();
+            }
+        });
     }
 
     // 패널 표시/숨김 메서드 추가
     private showPanel(): void {
-        if (this.panelContainer) {
-            this.panelContainer.style.transform = 'translateY(0)';
+        if (TranslationExtension.panelWindow && TranslationExtension.panelWindow.closed) {
+            // 패널이 닫혔다면 다시 생성
+            this.createTranslationBar();
+        } else if (TranslationExtension.panelWindow) {
+            TranslationExtension.panelWindow.focus();
         }
     }
 
     private hidePanel(): void {
-        if (this.panelContainer) {
-            this.panelContainer.style.transform = 'translateY(100%)';
-        }
+        // 마우스가 벗어났을 때는 패널을 숨기지 않음
+        // 사용자가 직접 닫거나 페이지를 떠날 때만 닫힘
+        return;
     }
 }
 
-// 확��� 프로그램 인스턴스 생성
+// 확 프로그램 인스턴스 생성
 new TranslationExtension(); 
