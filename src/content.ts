@@ -176,15 +176,16 @@ Please respond in the following JSON format only:
                         .join(' ');
 
                     if (text) {
-                        // 패널 표시
                         await this.createTranslationBar();
                         this.showPanel();
 
-                        // 번역 수행
-                        const translation = await this.fetchTranslationAndGrammar(text);
-                        
-                        // 번역 결과를 패널로 전송
-                        await this.sendTranslationToPanel(text, translation);
+                        try {
+                            const translation = await this.fetchTranslationAndGrammar(text);
+                            await this.sendTranslationToPanel(text, translation);
+                        } catch (error) {
+                            await this.sendTranslationToPanel(text);
+                            logger.log('content', 'Translation failed', error);
+                        }
                     }
                 } catch (error) {
                     logger.log('content', 'Error in mouseenter handler', error);
@@ -270,19 +271,25 @@ Please respond in the following JSON format only:
         return;
     }
 
-    private async sendTranslationToPanel(text: string, translation: TranslationResponse): Promise<void> {
+    private async sendTranslationToPanel(text: string, translation?: TranslationResponse): Promise<void> {
         try {
-            logger.log('content', 'Sending translation to panel', { text });
+            logger.log('content', 'Sending to panel', { text });
             const response = await chrome.runtime.sendMessage({
                 type: 'SEND_TO_PANEL',
                 data: {
                     selectedText: text,
-                    translation: translation
+                    translation: translation || {
+                        translation: '번역 실패',
+                        grammar: '문법 분석 실패',
+                        definition: '정의 분석 실패',
+                        words: [],
+                        idioms: []
+                    }
                 }
             });
-            logger.log('content', 'Send translation response', response);
+            logger.log('content', 'Send response', response);
         } catch (error) {
-            logger.log('content', 'Error sending translation to panel', error);
+            logger.log('content', 'Error sending to panel', error);
         }
     }
 }
