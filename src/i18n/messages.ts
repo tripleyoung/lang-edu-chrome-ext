@@ -10,7 +10,8 @@ export const messages = {
         enabled: '활성화',
         disabled: '비활성화',
         use: '사용',
-        notUse: '미사용'
+        notUse: '미사용',
+        useAudioFeature: '문장 발음 듣기',
     },
     en: {
         settings: 'Translation Settings',
@@ -23,7 +24,8 @@ export const messages = {
         enabled: 'Enabled',
         disabled: 'Disabled',
         use: 'Use',
-        notUse: 'Don\'t Use'
+        notUse: 'Don\'t Use',
+        useAudioFeature: 'Text-to-Speech',
     },
     ja: {
         settings: '翻訳設定',
@@ -36,7 +38,8 @@ export const messages = {
         enabled: '有効',
         disabled: '無効',
         use: '使用',
-        notUse: '未使用'
+        notUse: '未使用',
+        useAudioFeature: '音声読み上げ',
     }
 };
 

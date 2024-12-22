@@ -7,14 +7,23 @@ const PopupPanel: React.FC = () => {
     const [usePanel, setUsePanel] = useState(true);
     const [useTooltip, setUseTooltip] = useState(false);
     const [useFullMode, setUseFullMode] = useState(false);
+    const [useAudioFeature, setUseAudioFeature] = useState(false);
     const [nativeLanguage, setNativeLanguage] = useState<Language>('ko');
     const [learningLanguage, setLearningLanguage] = useState<Language>('en');
 
     useEffect(() => {
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'nativeLanguage', 'learningLanguage'], (result) => {
+        chrome.storage.sync.get([
+            'usePanel', 
+            'useTooltip', 
+            'useFullMode', 
+            'useAudioFeature',
+            'nativeLanguage', 
+            'learningLanguage'
+        ], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
             setUseFullMode(result.useFullMode ?? false);
+            setUseAudioFeature(result.useAudioFeature ?? false);
             setNativeLanguage((result.nativeLanguage as Language) || 'ko');
             setLearningLanguage((result.learningLanguage as Language) || 'en');
         });
@@ -62,6 +71,25 @@ const PopupPanel: React.FC = () => {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
                 settings: { usePanel, useTooltip, useFullMode: newValue }
+            });
+        }
+    };
+
+    const handleAudioFeatureToggle = async () => {
+        const newValue = !useAudioFeature;
+        setUseAudioFeature(newValue);
+        await chrome.storage.sync.set({ useAudioFeature: newValue });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { 
+                    usePanel, 
+                    useTooltip, 
+                    useFullMode,
+                    useAudioFeature: newValue 
+                }
             });
         }
     };
@@ -120,6 +148,22 @@ const PopupPanel: React.FC = () => {
                         `}
                     >
                         {useFullMode ? t('enabled') : t('disabled')}
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm">{t('useAudioFeature')}</span>
+                    <button
+                        onClick={handleAudioFeatureToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${useAudioFeature 
+                                ? 'bg-blue-600 hover:bg-blue-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {useAudioFeature ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 

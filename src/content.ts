@@ -32,6 +32,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         extensionInstance.usePanel = message.settings.usePanel;
         extensionInstance.useTooltip = message.settings.useTooltip;
         extensionInstance.useFullMode = message.settings.useFullMode;
+        extensionInstance.useAudioFeature = message.settings.useAudioFeature;
         
         if (message.settings.useFullMode) {
             extensionInstance.applyFullMode();
@@ -68,6 +69,7 @@ class TranslationExtension {
     public usePanel: boolean = true;
     public useTooltip: boolean = false;
     public useFullMode: boolean = false;
+    public useAudioFeature: boolean = false;  // 추가
     private translationCache: Map<string, TranslationResponse> = new Map();  // 타입 수정
     private dictionaryCache: Map<string, any> = new Map();      // 사전 캐시
     private debounceTime: number = 300;  // 디바운스 시간 증가
@@ -137,9 +139,90 @@ class TranslationExtension {
     public processTextElements(): void {
         if (!this.isEnabled) return;
 
-        // 이벤트 위임을 document.body에 적용
+        // 기존 음성 버튼들 제거
+        document.querySelectorAll('.translation-audio-button').forEach(btn => btn.remove());
+
+        // 설정 확인
+        chrome.storage.sync.get(['useAudioFeature'], (result) => {
+            if (!result.useAudioFeature) return;
+
+            // 텍스트 요소들을 찾아서 음성 버튼 추가
+            const textElements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th');
+            textElements.forEach(element => {
+                const text = this.getElementText(element as HTMLElement);
+                if (text && text.length > 2) {
+                    this.addAudioButton(element as HTMLElement, text);
+                }
+            });
+        });
+
+        // 기존의 이벤트 위임 코드 유지
         document.body.removeEventListener('mouseover', this.handleMouseOver);
         document.body.addEventListener('mouseover', this.handleMouseOver);
+    }
+
+    private addAudioButton(element: HTMLElement, text: string): void {
+        // 이미 버튼이 있으면 건너뛰기
+        if (element.querySelector('.translation-audio-button')) return;
+
+        chrome.storage.sync.get(['nativeLanguage', 'learningLanguage'], async (settings) => {
+            const nativeLang = settings.nativeLanguage || 'ko';
+            const learningLang = settings.learningLanguage || 'en';
+            
+            // 원본 텍스트의 언어 감지
+            const sourceLang = await this.detectLanguage(text);
+            
+            // 음성 재생 시 사용할 언어 결정
+            const isNativeText = sourceLang === nativeLang;
+            const targetLang = isNativeText ? learningLang : nativeLang;
+            
+            const button = document.createElement('button');
+            button.className = 'translation-audio-button';
+            button.innerHTML = '🔊';
+            button.style.cssText = `
+                background: none;
+                border: none;
+                color: #4a9eff;
+                cursor: pointer;
+                padding: 2px 6px;
+                font-size: 14px;
+                opacity: 0.7;
+                transition: opacity 0.3s;
+                vertical-align: middle;
+                margin-left: 4px;
+            `;
+
+            button.addEventListener('mouseover', () => {
+                button.style.opacity = '1';
+            });
+
+            button.addEventListener('mouseout', () => {
+                button.style.opacity = '0.7';
+            });
+
+            button.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                
+                // 원본 텍스트가 모국어인 경우, 번역된 텍스트의 음성 재생
+                if (isNativeText) {
+                    const translation = await this.translateText(text, targetLang);
+                    const utterance = new SpeechSynthesisUtterance(translation);
+                    utterance.lang = targetLang === 'en' ? 'en-US' : 
+                                    targetLang === 'ko' ? 'ko-KR' : 
+                                    targetLang === 'ja' ? 'ja-JP' : 'en-US';
+                    speechSynthesis.speak(utterance);
+                } else {
+                    // 원본 텍스트가 학습 언어인 경우, 원본 텍스트의 음성 재생
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.lang = sourceLang === 'en' ? 'en-US' : 
+                                    sourceLang === 'ko' ? 'ko-KR' : 
+                                    sourceLang === 'ja' ? 'ja-JP' : 'en-US';
+                    speechSynthesis.speak(utterance);
+                }
+            });
+
+            element.appendChild(button);
+        });
     }
 
     private setupObserver(): void {
@@ -191,7 +274,7 @@ class TranslationExtension {
                     await chrome.windows.get(TranslationExtension.panelWindow.id);
                     return; // 패널이 존재하면 리턴
                 } catch {
-                    // 패널이 존재하지 않으면 계속 진행
+                    // ���널이 존재하지 않으면 계속 진행
                 }
             }
 
@@ -228,7 +311,7 @@ class TranslationExtension {
     }
 
     private hidePanel(): void {
-        // 마우스가 벗어날 때는 패널을 숨기지 않음
+        // ��우스가 벗어날 때는 패널을 숨기지 않음
         // 사용자가 직접 닫거나 이지를 떠날 때만 닫힘
         return;
     }
@@ -446,7 +529,7 @@ class TranslationExtension {
                     margin: ${getComputedStyle(element).margin};
                 `;
 
-                // 원본 요소의 스��일 복사
+                // 원본 요소의 스일 복사
                 const originalElement = element.cloneNode(true) as HTMLElement;
                 
                 // 번역 요소 생성
@@ -468,7 +551,7 @@ class TranslationExtension {
     }
 
     private async analyzeWords(text: string): Promise<TranslationResponse['words']> {
-        // 텍스트를 단어로 분리
+        // 텍스트를 단어로 리
         const words = text.match(/\b[A-Za-z]+\b/g) || [];
         const uniqueWords = [...new Set(words)];
         const results: TranslationResponse['words'] = [];
@@ -515,43 +598,34 @@ class TranslationExtension {
     }
 
     // 툴팁 표시 함수
-    private showTooltip(element: HTMLElement, text: string): void {
+    private showTooltip(element: HTMLElement, text: string, translation: TranslationResponse): void {
         // 기존 툴팁들 모두 제거
         document.querySelectorAll('.translation-tooltip').forEach(tooltip => tooltip.remove());
 
-        // 이미 처리된 요소인지 확인
         if (element.hasAttribute('data-has-tooltip')) {
             return;
         }
 
         const tooltipDiv = document.createElement('div');
         tooltipDiv.className = 'translation-tooltip';
-        tooltipDiv.textContent = text;
-        
-        // 요소의 위치와 크기 가져오기
-        const rect = element.getBoundingClientRect();
-        
+        tooltipDiv.textContent = translation.translation;  // 번역된 텍스트만 표시
+
         // 툴팁 스타일 설정
         tooltipDiv.style.cssText = `
             position: absolute;
-            left: ${rect.left + window.scrollX}px;
-            top: ${rect.bottom + window.scrollY}px;
-            width: ${rect.width}px;
-            background-color: rgba(0, 0, 0, 0.8);
+            left: ${element.getBoundingClientRect().left + window.scrollX}px;
+            top: ${element.getBoundingClientRect().bottom + window.scrollY}px;
+            background-color: rgba(0, 0, 0, 0.9);
             color: white;
             padding: 8px;
             border-radius: 4px;
             z-index: 2147483647;
             font-size: 14px;
         `;
-        
-        // 툴팁을 body에 추가
-        document.body.appendChild(tooltipDiv);
 
-        // 요소에 툴팁 표시 중임을 표시
+        document.body.appendChild(tooltipDiv);
         element.setAttribute('data-has-tooltip', 'true');
 
-        // 툴팁 거
         const removeTooltip = () => {
             tooltipDiv.remove();
             element.removeEventListener('mouseleave', removeTooltip);
@@ -629,8 +703,14 @@ class TranslationExtension {
                     this.translationCache.set(text, translation);
                 }
 
+                // 툴팁 표시 (번역된 텍스트만)
                 if (this.useTooltip) {
-                    this.showTooltip(element, translation.translation);
+                    this.showTooltip(element, text, translation);
+                }
+
+                // 음성 버튼 추가 (설정이 활성화된 경우)
+                if (this.useAudioFeature) {
+                    this.addAudioButton(element, text);
                 }
                 
                 if (this.usePanel || this.autoOpenPanel) {
