@@ -8,7 +8,7 @@ module.exports = {
         popup: './src/popup.tsx',
         content: './src/content.ts',
         background: './src/background.ts',
-        panel: './src/panel.ts'
+        panel: './src/panel.tsx'
     },
     output: {
         path: path.resolve(__dirname, 'dist'),
@@ -31,7 +31,12 @@ module.exports = {
                 test: /\.css$/,
                 use: [
                     MiniCssExtractPlugin.loader,
-                    'css-loader',
+                    {
+                        loader: 'css-loader',
+                        options: {
+                            importLoaders: 1
+                        }
+                    },
                     'postcss-loader'
                 ]
             }

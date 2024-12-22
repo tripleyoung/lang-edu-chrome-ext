@@ -4,6 +4,7 @@ import { Card, CardContent } from "./components/ui/card";
 import { Switch } from "./components/ui/switch";
 import { ExtensionState } from './types';
 import './styles.css';
+import { Logger } from './logger';
 
 const PopupApp: React.FC = () => {
     const [settings, setSettings] = React.useState<ExtensionState>({
@@ -65,6 +66,9 @@ const PopupApp: React.FC = () => {
                     </div>
                 </CardContent>
             </Card>
+            <button onClick={() => Logger.getInstance().downloadLogs()}>
+                로그 다운로드
+            </button>
         </div>
     );
 };

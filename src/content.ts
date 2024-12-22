@@ -1,5 +1,8 @@
 import { TranslationResponse, ClaudeResponse, TextGroup } from './types';
 import { CONFIG } from './config';
+import { Logger } from './logger';
+
+const logger = Logger.getInstance();
 
 class TranslationExtension {
     private static instance: TranslationExtension | null = null;
@@ -74,6 +77,8 @@ class TranslationExtension {
             const targetLanguage = await chrome.storage.sync.get('targetLanguage');
             const targetLang = targetLanguage.targetLanguage || 'ko';
 
+            logger.log('content', 'Fetching translation', { text, targetLang });
+
             const response = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -100,7 +105,13 @@ Please respond in the following JSON format only:
                 })
             });
 
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+            }
+
             const data = await response.json() as ClaudeResponse;
+            logger.log('content', 'Received translation response');
+
             const parsedResponse = JSON.parse(data.content[0].text) as TranslationResponse;
             
             if (data.usage) {
@@ -110,7 +121,7 @@ Please respond in the following JSON format only:
             
             return parsedResponse;
         } catch (error) {
-            console.error('Translation API error:', error);
+            logger.log('content', 'Translation API error', error);
             throw error;
         }
     }
@@ -142,7 +153,6 @@ Please respond in the following JSON format only:
             return hasText;
         });
 
-        // 각 텍스트 요소에 이벤트 리스너 추가
         textElements.forEach(element => {
             const htmlEl = element as HTMLElement;
             let originalColor = '';
@@ -155,7 +165,7 @@ Please respond in the following JSON format only:
                         htmlEl.style.color = '#ff6b00';
                         htmlEl.style.transition = 'color 0.3s ease';
                     } catch (e) {
-                        console.log('Color change failed, but continuing with translation');
+                        logger.log('content', 'Color change failed', e);
                     }
 
                     // 텍스트 내용 가져오기
@@ -165,90 +175,19 @@ Please respond in the following JSON format only:
                         .filter(text => text && text.length > 0)
                         .join(' ');
 
-                    if (text && this.translationBar) {
-                        // 먼저 선택한 텍스트를 보여줌
-                        this.translationBar.innerHTML = `
-                            <div style="max-width: 1200px; margin: 0 auto;">
-                                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                                    <div style="flex: 1;">
-                                        <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
-                                        <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
-                                            ${text}
-                                        </div>
-                                    </div>
-                                    <div style="flex: 1;">
-                                        <strong style="color: #66b3ff; display: block; margin-bottom: 8px;">번역</strong>
-                                        <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
-                                            번역 중...
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                    if (text) {
+                        // 패널 표시
+                        await this.createTranslationBar();
                         this.showPanel();
 
-                        try {
-                            const translation = await this.fetchTranslationAndGrammar(text);
-                            
-                            // 번역 결과로 업데이트
-                            this.translationBar.innerHTML = `
-                                <div style="max-width: 1200px; margin: 0 auto;">
-                                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                                        <div style="flex: 1;">
-                                            <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
-                                                ${text}
-                                            </div>
-                                        </div>
-                                        <div style="flex: 1;">
-                                            <strong style="color: #66b3ff; display: block; margin-bottom: 8px;">번역</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
-                                                ${translation.translation}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; color: white;">
-                                        <div>
-                                            <strong style="color: #66ff66; display: block; margin-bottom: 8px;">문법 설명</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px;">
-                                                ${translation.grammar}
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <strong style="color: #ff6666; display: block; margin-bottom: 8px;">주요 단어/구문</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px;">
-                                                ${translation.definition}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                            this.sendTranslationToPanel(this.translationBar.innerHTML);
-                        } catch (error) {
-                            // 번역 실패 시에도 원본 텍스트는 유지
-                            this.translationBar.innerHTML = `
-                                <div style="max-width: 1200px; margin: 0 auto;">
-                                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
-                                        <div style="flex: 1;">
-                                            <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
-                                                ${text}
-                                            </div>
-                                        </div>
-                                        <div style="flex: 1;">
-                                            <strong style="color: #ff6666; display: block; margin-bottom: 8px;">번역 실패</strong>
-                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ff6666;">
-                                                번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            `;
-                            this.sendTranslationToPanel(this.translationBar.innerHTML);
-                        }
+                        // 번역 수행
+                        const translation = await this.fetchTranslationAndGrammar(text);
+                        
+                        // 번역 결과를 패널로 전송
+                        await this.sendTranslationToPanel(text, translation);
                     }
                 } catch (error) {
-                    console.error('Error:', error);
+                    logger.log('content', 'Error in mouseenter handler', error);
                 }
             });
 
@@ -256,7 +195,6 @@ Please respond in the following JSON format only:
                 if (originalColor) {
                     htmlEl.style.color = originalColor;
                 }
-                this.hidePanel();
             });
 
             element.setAttribute('data-translation-processed', 'true');
@@ -332,19 +270,19 @@ Please respond in the following JSON format only:
         return;
     }
 
-    private async sendTranslationToPanel(html: string): Promise<void> {
+    private async sendTranslationToPanel(text: string, translation: TranslationResponse): Promise<void> {
         try {
-            console.log('Sending translation to panel:', html);  // 디버깅용
+            logger.log('content', 'Sending translation to panel', { text });
             const response = await chrome.runtime.sendMessage({
                 type: 'SEND_TO_PANEL',
-                html: html
+                data: {
+                    selectedText: text,
+                    translation: translation
+                }
             });
-            console.log('Send response:', response);  // 디버깅용
-            if (!response?.success) {
-                console.error('Failed to send translation to panel');
-            }
+            logger.log('content', 'Send translation response', response);
         } catch (error) {
-            console.error('Failed to send translation to panel:', error);
+            logger.log('content', 'Error sending translation to panel', error);
         }
     }
 }
