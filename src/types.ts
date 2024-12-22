@@ -19,7 +19,6 @@ export interface ClaudeResponse {
 
 export interface ExtensionState {
     isEnabled: boolean;
-    sourceLanguage: string;
     targetLanguage: string;
 }
 

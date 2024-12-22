@@ -65,6 +65,9 @@ class TranslationExtension {
 
     private async fetchTranslationAndGrammar(text: string): Promise<TranslationResponse> {
         try {
+            const targetLanguage = await chrome.storage.sync.get('targetLanguage');
+            const targetLang = targetLanguage.targetLanguage || 'ko';
+
             const response = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -77,15 +80,15 @@ class TranslationExtension {
                     max_tokens: 1000,
                     messages: [{
                         role: 'user',
-                        content: `Analyze the following text. Translate it to Korean, explain its grammar structure, and provide definitions for key words or phrases.
+                        content: `Detect the language of the following text and translate it to ${targetLang}. Then analyze its grammar structure and provide definitions for key words or phrases.
                         
 Original text: "${text}"
 
 Please respond in the following JSON format only:
 {
-    "translation": "[Korean translation]",
-    "grammar": "[Grammar explanation in Korean]",
-    "definition": "[Key words/phrases explanation in Korean]"
+    "translation": "[Translation to ${targetLang}]",
+    "grammar": "[Grammar explanation in ${targetLang}]",
+    "definition": "[Key words/phrases explanation in ${targetLang}]"
 }`
                     }]
                 })
@@ -363,5 +366,5 @@ Please respond in the following JSON format only:
     }
 }
 
-// 확장 프로그램 인스턴스 생성
+// 확��� 프로그램 인스턴스 생성
 new TranslationExtension(); 

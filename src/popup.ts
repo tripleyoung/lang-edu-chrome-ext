@@ -1,12 +1,10 @@
 import { ExtensionState } from './types';
 
 class PopupManager {
-    private sourceLanguage: HTMLSelectElement;
     private targetLanguage: HTMLSelectElement;
     private extensionToggle: HTMLInputElement;
 
     constructor() {
-        this.sourceLanguage = document.getElementById('sourceLanguage') as HTMLSelectElement;
         this.targetLanguage = document.getElementById('targetLanguage') as HTMLSelectElement;
         this.extensionToggle = document.getElementById('extensionToggle') as HTMLInputElement;
         
@@ -20,14 +18,10 @@ class PopupManager {
 
     private async loadSettings(): Promise<void> {
         const settings = await chrome.storage.sync.get([
-            'sourceLanguage',
             'targetLanguage',
             'isEnabled'
         ]) as ExtensionState;
 
-        if (settings.sourceLanguage) {
-            this.sourceLanguage.value = settings.sourceLanguage;
-        }
         if (settings.targetLanguage) {
             this.targetLanguage.value = settings.targetLanguage;
         }
@@ -37,14 +31,12 @@ class PopupManager {
     }
 
     private setupEventListeners(): void {
-        this.sourceLanguage.addEventListener('change', () => this.saveSettings());
         this.targetLanguage.addEventListener('change', () => this.saveSettings());
         this.extensionToggle.addEventListener('change', () => this.saveSettings());
     }
 
     private async saveSettings(): Promise<void> {
         await chrome.storage.sync.set({
-            sourceLanguage: this.sourceLanguage.value,
             targetLanguage: this.targetLanguage.value,
             isEnabled: this.extensionToggle.checked
         });
