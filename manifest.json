@@ -5,11 +5,13 @@
     "description": "웹 페이지에서 언어 학습을 도와주는 확장 프로그램",
     "permissions": [
         "activeTab",
-        "storage"
+        "storage",
+        "devtools"
     ],
     "host_permissions": [
         "https://api.anthropic.com/*"
     ],
+    "devtools_page": "devtools.html",
     "action": {
         "default_popup": "popup.html"
     },

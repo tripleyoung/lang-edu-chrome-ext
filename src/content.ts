@@ -7,9 +7,12 @@ class TranslationExtension {
     private totalTokensUsed: number = 0;
     private observer: MutationObserver | null = null;
     private processTimeout: number | null = null;
+    private translationBar: HTMLDivElement | null = null;
+    private panelContainer: HTMLDivElement | null = null;
 
     constructor() {
         this.initialize();
+        this.createTranslationBar();
     }
 
     private async initialize(): Promise<void> {
@@ -106,244 +109,147 @@ Please respond in the following JSON format only:
     private processTextElements(): void {
         if (!this.isEnabled) return;
 
-        // 선택자 범위 확장 - BBC 뉴스 관련 선택자 추가
-        const textElements = Array.from(document.querySelectorAll(
-            'p, article, div > p, .article-content, .post-content, main p, section p, ' + 
-            'div[class*="text"], div[class*="content"], div[class*="body"], ' +
-            'div > div:not([class]), div > span, div > text, ' +
-            // BBC 뉴스 관련 선택자
-            '[data-component="text-block"], ' +
-            'article p, ' +
-            '.article__body-content p, ' +
-            '.story-body__inner p, ' +
-            '.article-body p'
-        )).filter(el => {
+        const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
             // 이미 처리된 요소 제외
             if (el.hasAttribute('data-translation-processed')) return false;
             if (el.closest('.translation-container')) return false;
-            
-            // 텍스트 내용 확인 - 최소 길이 조정
-            const text = el.textContent?.trim() || '';
-            if (text.length < 5) return false;  // 더 짧은 텍스트도 포함하도록 수정
-            
-            // 이미지 캡션이나 메타데이터는 제외
-            if (el.closest('figcaption, .metadata, .tags, .byline')) return false;
 
-            // React 관련 요소 제외
-            if (el.closest('[class*="react"],[id*="react"],[data-reactroot],[id="root"],[id="__next"]')) {
-                return false;
-            }
+            // 제외할 태그들
+            const excludeTags = [
+                'SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 
+                'SELECT', 'TEXTAREA', 'HEAD', 'META', 'LINK', 'TITLE',
+                'SVG', 'PATH', 'IMG', 'VIDEO', 'AUDIO'
+            ];
+            if (excludeTags.includes(el.tagName)) return false;
 
-            // 특정 요소 제외
-            const invalidParents = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'];
-            if (invalidParents.includes(el.tagName) || el.closest(invalidParents.join(','))) {
-                return false;
-            }
-
-            // 숨겨진 요소 제외
-            const style = window.getComputedStyle(el);
-            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-                return false;
-            }
-
-            // 실제 텍스트 컨텐츠가 있는지 확인
-            const hasText = Array.from(el.childNodes).some(node => {
-                if (node.nodeType !== Node.TEXT_NODE) return false;
-                const text = node.textContent;
-                return text != null && text.trim().length > 0;
-            });
+            // 직접적인 스트 노드 확인
+            const hasText = Array.from(el.childNodes)
+                .filter(node => node.nodeType === Node.TEXT_NODE)
+                .some(node => {
+                    const text = node.textContent?.trim() || '';
+                    return text.length >= 2 && !/^[\s\d\W]+$/.test(text);
+                });
 
             return hasText;
         });
 
-        const groups = this.groupTextElements(textElements);
-        
-        groups.forEach(group => {
-            try {
-                const container = this.createGroupContainer(group.elements);
-                group.commonParent.appendChild(container);
-                group.elements.forEach(element => {
-                    element.setAttribute('data-translation-processed', 'true');
-                });
-            } catch (error) {
-                console.error('Failed to process group:', error);
-            }
-        });
-    }
+        // 각 텍스트 요소에 이벤트 리스너 추가
+        textElements.forEach(element => {
+            const htmlEl = element as HTMLElement;
+            let originalColor = '';
 
-    private groupTextElements(elements: Element[]): TextGroup[] {
-        const groups: TextGroup[] = [];
-        const maxDistance = 50; // 문단 간격 기준 (픽셀)
+            htmlEl.addEventListener('mouseenter', async () => {
+                try {
+                    // 색상 변경 시도
+                    try {
+                        originalColor = window.getComputedStyle(htmlEl).color;
+                        htmlEl.style.color = '#ff6b00';
+                        htmlEl.style.transition = 'color 0.3s ease';
+                    } catch (e) {
+                        console.log('Color change failed, but continuing with translation');
+                    }
 
-        // 요소들을 위치 기준으로 정렬
-        const sortedElements = elements.slice().sort((a, b) => {
-            const rectA = a.getBoundingClientRect();
-            const rectB = b.getBoundingClientRect();
-            return rectA.top - rectB.top;
-        });
+                    // 텍스트 내용 가져오기
+                    const text = Array.from(htmlEl.childNodes)
+                        .filter(node => node.nodeType === Node.TEXT_NODE)
+                        .map(node => node.textContent?.trim())
+                        .filter(text => text && text.length > 0)
+                        .join(' ');
 
-        let currentGroup: Element[] = [];
-        let lastRect: DOMRect | null = null;
+                    if (text && this.translationBar) {
+                        // 먼저 선택한 텍스트를 보여줌
+                        this.translationBar.innerHTML = `
+                            <div style="max-width: 1200px; margin: 0 auto;">
+                                <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                    <div style="flex: 1;">
+                                        <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
+                                        <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
+                                            ${text}
+                                        </div>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <strong style="color: #66b3ff; display: block; margin-bottom: 8px;">번역</strong>
+                                        <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
+                                            번역 중...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        this.showPanel();
 
-        sortedElements.forEach((element) => {
-            const rect = element.getBoundingClientRect();
-            
-            // 새로운 그룹 시작 조건:
-            // 1. 첫 요소
-            // 2. 이전 요소와의 거리가 maxDistance보다 큼
-            // 3. 부모 구조가 다름
-            if (!lastRect || 
-                Math.abs(rect.top - lastRect.bottom) > maxDistance || 
-                !this.haveSameParentStructure(currentGroup[0], element)) {
-                
-                if (currentGroup.length > 0) {
-                    groups.push({
-                        elements: currentGroup,
-                        commonParent: this.findCommonParent(currentGroup),
-                        distance: maxDistance
-                    });
+                        try {
+                            const translation = await this.fetchTranslationAndGrammar(text);
+                            
+                            // 번역 결과로 업데이트
+                            this.translationBar.innerHTML = `
+                                <div style="max-width: 1200px; margin: 0 auto;">
+                                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                        <div style="flex: 1;">
+                                            <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
+                                                ${text}
+                                            </div>
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <strong style="color: #66b3ff; display: block; margin-bottom: 8px;">번역</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
+                                                ${translation.translation}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; color: white;">
+                                        <div>
+                                            <strong style="color: #66ff66; display: block; margin-bottom: 8px;">문법 설명</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px;">
+                                                ${translation.grammar}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <strong style="color: #ff6666; display: block; margin-bottom: 8px;">주요 단어/구문</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px;">
+                                                ${translation.definition}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        } catch (error) {
+                            // 번역 실패 시에도 원본 텍스트는 유지
+                            this.translationBar.innerHTML = `
+                                <div style="max-width: 1200px; margin: 0 auto;">
+                                    <div style="display: flex; gap: 20px; margin-bottom: 20px;">
+                                        <div style="flex: 1;">
+                                            <strong style="color: #ffd700; display: block; margin-bottom: 8px;">선택한 텍스트</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ffffff; font-size: 16px; line-height: 1.5;">
+                                                ${text}
+                                            </div>
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <strong style="color: #ff6666; display: block; margin-bottom: 8px;">번역 실패</strong>
+                                            <div style="background: rgba(255, 255, 255, 0.15); padding: 15px; border-radius: 8px; color: #ff6666;">
+                                                번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
                 }
-                currentGroup = [element];
-            } else {
-                currentGroup.push(element);
-            }
-
-            lastRect = rect;
-        });
-
-        // 마지막 그룹 처리
-        if (currentGroup.length > 0) {
-            groups.push({
-                elements: currentGroup,
-                commonParent: this.findCommonParent(currentGroup),
-                distance: maxDistance
             });
-        }
 
-        return groups;
-    }
+            htmlEl.addEventListener('mouseleave', () => {
+                if (originalColor) {
+                    htmlEl.style.color = originalColor;
+                }
+                this.hidePanel();
+            });
 
-    private findCommonParent(elements: Element[]): Element {
-        let parent = elements[0].parentElement;
-        while (parent) {
-            if (elements.every(el => parent?.contains(el))) {
-                return parent;
-            }
-            parent = parent.parentElement;
-        }
-        return document.body;
-    }
-
-    private haveSameParentStructure(el1: Element | undefined, el2: Element): boolean {
-        if (!el1) return false;
-
-        const getParentPath = (el: Element): string[] => {
-            const path: string[] = [];
-            let current = el.parentElement;
-            while (current && current !== document.body) {
-                path.push(current.tagName + (current.className ? `.${current.className}` : ''));
-                current = current.parentElement;
-            }
-            return path;
-        };
-
-        const path1 = getParentPath(el1);
-        const path2 = getParentPath(el2);
-
-        // 가장 가까운 3단계의 부모만 비교
-        const relevantLength = Math.min(3, path1.length, path2.length);
-        return path1.slice(0, relevantLength).join('|') === path2.slice(0, relevantLength).join('|');
-    }
-
-    private createGroupContainer(elements: Element[]): HTMLDivElement {
-        const container = document.createElement('div');
-        container.className = 'translation-container translation-group';
-        container.style.cssText = `
-            margin: 20px 0;
-            padding: 20px;
-            border: 2px solid transparent;
-            border-radius: 8px;
-            background: transparent;
-            transition: all 0.3s ease;
-        `;
-
-        // 원본 텍스트 영역
-        const textDiv = document.createElement('div');
-        textDiv.className = 'original-text';
-        textDiv.textContent = elements.map(el => el.textContent?.trim()).join('\n\n');
-        textDiv.style.cssText = `
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 16px;
-            line-height: 1.6;
-            white-space: pre-wrap;
-        `;
-
-        // 번역 결과 영역
-        const translationResult = document.createElement('div');
-        translationResult.className = 'translation-result';
-        translationResult.style.display = 'none';
-
-        // 호버 효과 추가
-        container.addEventListener('mouseenter', () => {
-            container.style.borderColor = '#007bff';
-            container.style.boxShadow = '0 0 0 1px #007bff';
+            element.setAttribute('data-translation-processed', 'true');
         });
-
-        container.addEventListener('mouseleave', () => {
-            container.style.borderColor = 'transparent';
-            container.style.boxShadow = 'none';
-        });
-
-        // 클릭 이벤트 추가
-        container.addEventListener('click', async () => {
-            if (translationResult.style.display === 'block') {
-                translationResult.style.display = 'none';
-                return;
-            }
-
-            try {
-                const text = textDiv.textContent || '';
-                const translation = await this.fetchTranslationAndGrammar(text);
-                
-                translationResult.innerHTML = `
-                    <div style="margin-top: 15px;">
-                        <div style="margin-bottom: 15px;">
-                            <strong style="color: #007bff;">번역:</strong>
-                            <div style="margin-top: 5px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                                ${translation.translation}
-                            </div>
-                        </div>
-                        <div style="margin-bottom: 15px;">
-                            <strong style="color: #28a745;">문법 설명:</strong>
-                            <div style="margin-top: 5px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                                ${translation.grammar}
-                            </div>
-                        </div>
-                        <div>
-                            <strong style="color: #dc3545;">주요 단어/구문:</strong>
-                            <div style="margin-top: 5px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
-                                ${translation.definition}
-                            </div>
-                        </div>
-                    </div>
-                `;
-                translationResult.style.display = 'block';
-            } catch (error) {
-                console.error('Translation error:', error);
-                translationResult.innerHTML = `
-                    <div style="color: #dc3545; padding: 10px; margin-top: 10px; background: #f8d7da; border-radius: 4px;">
-                        번역 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}
-                    </div>
-                `;
-                translationResult.style.display = 'block';
-            }
-        });
-
-        container.appendChild(textDiv);
-        container.appendChild(translationResult);
-
-        return container;
     }
 
     private setupObserver(): void {
@@ -386,6 +292,74 @@ Please respond in the following JSON format only:
             attributes: false,
             characterData: false
         });
+    }
+
+    private createTranslationBar(): void {
+        // 독립된 패널을 위한 새 윈도우 생성
+        const panelWindow = window.open('', 'translationPanel', `
+            width=800,
+            height=400,
+            left=${window.screen.width - 820},
+            top=${window.screen.height - 450},
+            resizable=yes,
+            scrollbars=yes,
+            status=no,
+            location=no,
+            toolbar=no,
+            menubar=no
+        `);
+
+        if (!panelWindow) {
+            console.error('팝업이 차단되었습니다.');
+            return;
+        }
+
+        // 패널 윈도우 스타일링
+        panelWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>번역 패널</title>
+                <style>
+                    body {
+                        margin: 0;
+                        padding: 20px;
+                        background: rgb(33, 33, 33);
+                        color: white;
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                    }
+                    .translation-bar {
+                        height: 100%;
+                        overflow-y: auto;
+                    }
+                </style>
+            </head>
+            <body>
+                <div id="translationContent"></div>
+            </body>
+            </html>
+        `);
+
+        // 번역 결과를 표시할 요소 저장
+        this.translationBar = panelWindow.document.getElementById('translationContent') as HTMLDivElement;
+
+        // 윈도우 닫힐 때 정리
+        panelWindow.onbeforeunload = () => {
+            this.translationBar = null;
+        };
+    }
+
+    // 패널 표시/숨김 메서드 추가
+    private showPanel(): void {
+        if (this.panelContainer) {
+            this.panelContainer.style.transform = 'translateY(0)';
+        }
+    }
+
+    private hidePanel(): void {
+        if (this.panelContainer) {
+            this.panelContainer.style.transform = 'translateY(100%)';
+        }
     }
 }
 
