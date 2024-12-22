@@ -94,7 +94,7 @@ class TranslationExtension {
                 this.applyFullMode();
             }
             
-            // 자동 오픈 모드가 활성화되어 있으면 패널 생성
+            // 자동 �� 모드가 활성화되어 있으면 패널 생성
             if (this.autoOpenPanel) {
                 this.createTranslationBar();
             }
@@ -169,13 +169,9 @@ Please respond in the following JSON format only:
     public processTextElements(): void {
         if (!this.isEnabled) return;
 
-        // 성능 개��을 위한 요소 선택자 최적화
-        const selector = 'p, h1, h2, h3, h4, h5, h6, li, td, th, div:not([class*="translation"])';
-        const textElements = document.querySelectorAll(selector);
-
-        // 이벤트 위임 사용
-        document.removeEventListener('mouseover', this.handleMouseOver);
-        document.addEventListener('mouseover', this.handleMouseOver);
+        // 이벤트 위임을 document.body에 적용
+        document.body.removeEventListener('mouseover', this.handleMouseOver);
+        document.body.addEventListener('mouseover', this.handleMouseOver);
     }
 
     private setupObserver(): void {
@@ -453,7 +449,7 @@ Please respond in the following JSON format only:
             try {
                 const translation = await this.googleTranslate(originalText);
                 
-                // 원문과 번역문이 동일한 경우 건너뛰기
+                // 원문과 번역문이 일한 경우 건너뛰기
                 if (originalText.toLowerCase() === translation.toLowerCase()) {
                     continue;
                 }
@@ -525,11 +521,14 @@ Please respond in the following JSON format only:
 
     // 텍스트 추출 함수
     private getElementText(element: HTMLElement): string {
-        return Array.from(element.childNodes)
-            .filter(node => node.nodeType === Node.TEXT_NODE)
-            .map(node => node.textContent?.trim())
-            .filter(Boolean)
-            .join(' ');
+        let text = '';
+        Array.from(element.childNodes).forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const nodeText = node.textContent?.trim();
+                if (nodeText) text += nodeText + ' ';
+            }
+        });
+        return text.trim();
     }
 
     // 툴팁 표시 함수
@@ -545,46 +544,33 @@ Please respond in the following JSON format only:
         const tooltipDiv = document.createElement('div');
         tooltipDiv.className = 'translation-tooltip';
         tooltipDiv.textContent = text;
-        tooltipDiv.style.opacity = '0';  // 초기에는 숨김
         
-        // 툴팁을 body에 직접 추가
+        // 요소의 위치와 크기 가져오기
+        const rect = element.getBoundingClientRect();
+        
+        // 툴팁 스타일 설정
+        tooltipDiv.style.cssText = `
+            position: absolute;
+            left: ${rect.left + window.scrollX}px;
+            top: ${rect.bottom + window.scrollY}px;
+            width: ${rect.width}px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px;
+            border-radius: 4px;
+            z-index: 2147483647;
+            font-size: 14px;
+        `;
+        
+        // 툴팁을 body에 추가
         document.body.appendChild(tooltipDiv);
 
         // 요소에 툴팁 표시 중임을 표시
         element.setAttribute('data-has-tooltip', 'true');
 
-        const updateTooltipPosition = (e: MouseEvent) => {
-            const offset = 15;
-            let x = e.pageX + offset;
-            let y = e.pageY + offset;
-
-            const tooltipRect = tooltipDiv.getBoundingClientRect();
-            const maxX = window.innerWidth - tooltipRect.width;
-            const maxY = window.innerHeight - tooltipRect.height;
-
-            if (x > maxX) x = e.pageX - tooltipRect.width - offset;
-            if (y > maxY) y = e.pageY - tooltipRect.height - offset;
-
-            tooltipDiv.style.left = `${x}px`;
-            tooltipDiv.style.top = `${y}px`;
-            tooltipDiv.style.opacity = '1';  // 위치가 설정된 후 표시
-        };
-
-        // 초기 위치 설정을 위한 이벤트 핸들러
-        const initialPositionHandler = (e: MouseEvent) => {
-            updateTooltipPosition(e);
-            element.removeEventListener('mousemove', initialPositionHandler);
-        };
-        element.addEventListener('mousemove', initialPositionHandler);
-
-        // 마우스 이동 핸들러
-        const mouseMoveHandler = (e: MouseEvent) => updateTooltipPosition(e);
-        document.addEventListener('mousemove', mouseMoveHandler);
-
         // 툴팁 제거
         const removeTooltip = () => {
             tooltipDiv.remove();
-            document.removeEventListener('mousemove', mouseMoveHandler);
             element.removeEventListener('mouseleave', removeTooltip);
             element.removeAttribute('data-has-tooltip');
         };
@@ -621,23 +607,37 @@ Please respond in the following JSON format only:
         }
     }
 
-    // 이벤트 위임 핸들러
+    // 이벤트 위임 핸��러
     private handleMouseOver = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
-        if (!this.isValidTextElement(target)) return;
+        
+        // 텍스트 노드를 포함한 가장 가까운 유효한 요소 찾기
+        const textElement = this.findClosestTextElement(target);
+        if (!textElement) return;
 
-        const text = this.getElementText(target);
-        if (!text) return;
+        const text = this.getElementText(textElement);
+        if (!text || text.length < 2) return;
 
-        this.mouseEnterHandler(target, text);
+        this.mouseEnterHandler(textElement, text);
     };
 
-    private isValidTextElement(element: HTMLElement): boolean {
-        if (element.hasAttribute('data-translation-processed')) return false;
-        if (element.closest('.translation-container')) return false;
-        
+    // 텍스트를 포함한 가장 가까운 유효한 소 찾기
+    private findClosestTextElement(element: HTMLElement): HTMLElement | null {
         const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'];
-        return !excludeTags.includes(element.tagName);
+        
+        let current: HTMLElement | null = element;
+        while (current) {
+            if (excludeTags.includes(current.tagName)) return null;
+            if (current.classList?.contains('translation-tooltip')) return null;
+            if (current.classList?.contains('translation-container')) return null;
+            
+            const text = this.getElementText(current);
+            if (text && text.length > 0) return current;
+            
+            current = current.parentElement;
+        }
+        
+        return null;
     }
 
     private mouseEnterHandler = async (element: HTMLElement, text: string) => {
