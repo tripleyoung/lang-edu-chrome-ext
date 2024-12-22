@@ -4,9 +4,13 @@ const logger = Logger.getInstance();
 
 let translationPanel: chrome.windows.Window | null = null;
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    logger.log('background', 'Received message', { type: message.type });
+// 호버된 탭 추적을 위한 변수 추가
+let lastActiveTabId: number | null = null;
 
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    logger.log('background', 'Received message in background', { type: message.type, message });
+
+    // 호널 열기 처리
     if (message.type === 'OPEN_TRANSLATION_PANEL') {
         // 기존 패널이 있는지 확인
         if (translationPanel && translationPanel.id) {
@@ -32,8 +36,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    // 호버 이벤트 처리
     if (message.type === 'SEND_TO_PANEL') {
         logger.log('background', 'Attempting to send translation data to panel');
+        
+        // 호버된 탭 ID 저장
+        if (sender.tab?.id) {
+            lastActiveTabId = sender.tab.id;
+            logger.log('background', 'Updated last active tab', { tabId: lastActiveTabId });
+        }
+
+        // 패널로 메시지 전달
         if (translationPanel?.tabs?.[0]?.id) {
             try {
                 chrome.tabs.sendMessage(translationPanel.tabs[0].id, {
@@ -59,21 +72,37 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    // 읽기 모드 처리
     if (message.type === 'TOGGLE_READER_MODE') {
-        // Promise를 처리하기 위해 즉시 실행 async 함수 사용
+        logger.log('background', 'Processing TOGGLE_READER_MODE', { enabled: message.enabled });
+        
         (async () => {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab?.id) {
-                try {
-                    await chrome.tabs.sendMessage(tab.id, {
-                        type: 'SET_READER_MODE',
-                        enabled: message.enabled
-                    });
-                    sendResponse({ success: true });
-                } catch (error) {
-                    logger.log('background', 'Failed to toggle reader mode', error);
+            try {
+                // 마지막으로 호버된 탭 ID 사용
+                const tabId = lastActiveTabId;
+                logger.log('background', 'Using last active tab', { tabId });
+
+                if (tabId) {
+                    logger.log('background', 'Attempting to send message to content script');
+                    
+                    try {
+                        await chrome.tabs.sendMessage(tabId, {
+                            type: 'SET_READER_MODE',
+                            enabled: message.enabled
+                        });
+                        logger.log('background', 'Message sent successfully');
+                        sendResponse({ success: true });
+                    } catch (error) {
+                        logger.log('background', 'Failed to send message to content script', error);
+                        sendResponse({ success: false });
+                    }
+                } else {
+                    logger.log('background', 'No last active tab found');
                     sendResponse({ success: false });
                 }
+            } catch (error) {
+                logger.log('background', 'Error in TOGGLE_READER_MODE handler', error);
+                sendResponse({ success: false });
             }
         })();
         return true;

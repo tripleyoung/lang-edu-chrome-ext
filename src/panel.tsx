@@ -23,6 +23,27 @@ const TranslationPanel: React.FC = () => {
 
             // 1. 즉시 UI 상태 업데이트
             setIsReaderMode(newMode);
+
+            logger.log('panel', 'Sending toggle message', { newMode });
+
+            // 2. background script에 메시지 전송
+            const response = await new Promise((resolve) => {
+                chrome.runtime.sendMessage({
+                    type: 'TOGGLE_READER_MODE',
+                    enabled: newMode
+                }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        logger.log('panel', 'Error sending message', chrome.runtime.lastError);
+                        resolve(false);
+                    } else {
+                        logger.log('panel', 'Message sent successfully', response);
+                        resolve(true);
+                    }
+                });
+            });
+
+            logger.log('panel', 'Toggle response received', { response });
+
             if (!newMode) {
                 setTranslationData({
                     selectedText: '텍스트에 마우스를 올리면 번역이 시작됩니다.',
@@ -35,23 +56,9 @@ const TranslationPanel: React.FC = () => {
                     }
                 });
             }
-
-            // 2. 백그라운드로 모드 전환 메시지 전송
-            setTimeout(() => {
-                chrome.runtime.sendMessage({
-                    type: 'TOGGLE_READER_MODE',
-                    enabled: newMode
-                });
-            }, 0);
-
-            // 3. 로딩 상태 빠르게 해제
-            setTimeout(() => {
-                setIsLoading(false);
-            }, 100);
-
-            logger.log('panel', `Mode changed to ${newMode ? 'reader' : 'hover'} mode`);
         } catch (error) {
             logger.log('panel', 'Failed to toggle mode', error);
+        } finally {
             setIsLoading(false);
         }
     };
