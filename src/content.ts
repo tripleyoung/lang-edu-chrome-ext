@@ -17,7 +17,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message.type === 'SET_READER_MODE') {
-        // 읽기 모드 설정만 하고 패널은 건드리지 않음
         extensionInstance.setReaderMode(message.enabled);
         sendResponse({ success: true });
         return true;
@@ -36,15 +35,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         
         if (message.settings.useFullMode) {
             extensionInstance.applyFullMode();
-        } else {
-            window.location.reload();  // 전체 모드 비활성화 시 페이지 새로고침
         }
+        sendResponse({ success: true });
         return true;
     }
 
     if (message.type === 'PANEL_CREATED') {
         chrome.windows.get(message.windowId, (window) => {
             TranslationExtension.panelWindow = window;
+            sendResponse({ success: true });
         });
         return true;
     }
@@ -94,7 +93,7 @@ class TranslationExtension {
                 this.applyFullMode();
             }
             
-            // 자동 픈 모드가 활성화되어 있으면 패널 생성
+            // 자동 픈 모드가 성화되어 있으면 패널 생성
             if (this.autoOpenPanel) {
                 this.createTranslationBar();
             }
@@ -185,21 +184,30 @@ class TranslationExtension {
     }
 
     private async createTranslationBar(): Promise<void> {
-        if (TranslationExtension.panelWindow?.id) {
-            try {
-                await chrome.windows.get(TranslationExtension.panelWindow.id);
-                return; // 창이 존재하면 리턴
-            } catch {
-                // 창이 존재하지 않으면 계속 진행
-            }
-        }
         try {
-            const response = await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
-            if (!response || !response.success) {
-                logger.log('content', 'Failed to open translation panel');
+            // 패널이 이미 존재하는지 확인
+            if (TranslationExtension.panelWindow?.id) {
+                try {
+                    await chrome.windows.get(TranslationExtension.panelWindow.id);
+                    return; // 패널이 존재하면 리턴
+                } catch {
+                    // 패널이 존재하지 않으면 계속 진행
+                }
             }
+
+            // 새 패널 생성 요청
+            await new Promise<void>((resolve) => {
+                chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' }, (response) => {
+                    if (response?.success) {
+                        logger.log('content', 'Translation panel opened successfully');
+                    } else {
+                        logger.log('content', 'Failed to open translation panel');
+                    }
+                    resolve();
+                });
+            });
         } catch (error) {
-            logger.log('content', 'Error opening translation panel', error);
+            logger.log('content', 'Error creating translation panel', error);
         }
     }
 
@@ -240,20 +248,24 @@ class TranslationExtension {
                     words,
                     idioms: []
                 };
-                this.translationCache.set(text, {
-                    translation: translatedText,
-                    grammar: '',
-                    definition: '',
-                    words,
-                    idioms: []
-                });
+                this.translationCache.set(text, translation);
             }
 
+            // 패널이 없으면 생성
+            if (!TranslationExtension.panelWindow?.id) {
+                await this.createTranslationBar();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // 패널이 있는지 다시 확인
             if (TranslationExtension.panelWindow?.id) {
                 await chrome.tabs.sendMessage(TranslationExtension.panelWindow.id, {
                     type: 'TRANSLATION_RESULT',
                     data: { text, ...translation }
                 });
+                logger.log('content', 'Translation sent to panel', { text, translation });
+            } else {
+                logger.log('content', 'Panel window not found');
             }
         } catch (error) {
             logger.log('content', 'Failed to send translation to panel', error);
@@ -434,7 +446,7 @@ class TranslationExtension {
                     margin: ${getComputedStyle(element).margin};
                 `;
 
-                // 원본 요소의 스타일 복사
+                // 원본 요소의 스��일 복사
                 const originalElement = element.cloneNode(true) as HTMLElement;
                 
                 // 번역 요소 생성
@@ -461,7 +473,7 @@ class TranslationExtension {
         const uniqueWords = [...new Set(words)];
         const results: TranslationResponse['words'] = [];
 
-        // 각 단어에 대해 사전 검색
+        // 각 단어에 대해 사전 색
         for (const word of uniqueWords) {
             try {
                 const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word.toLowerCase()}`);
@@ -577,7 +589,7 @@ class TranslationExtension {
         this.mouseEnterHandler(textElement, text);
     };
 
-    // 텍��트를 포함한 가장 가까운 유효한 소 찾기
+    // 텍스트를 포함한 가장 가까운 유효한 소 찾기
     private findClosestTextElement(element: HTMLElement): HTMLElement | null {
         const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'];
         
