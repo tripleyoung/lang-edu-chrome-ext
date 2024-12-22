@@ -5,12 +5,14 @@ import './styles.css';
 const PopupPanel: React.FC = () => {
     const [usePanel, setUsePanel] = useState(true);
     const [useTooltip, setUseTooltip] = useState(false);
+    const [useFullMode, setUseFullMode] = useState(false);
 
     useEffect(() => {
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode'], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
+            setUseFullMode(result.useFullMode ?? false);
         });
     }, []);
 
@@ -19,12 +21,11 @@ const PopupPanel: React.FC = () => {
         setUsePanel(newValue);
         await chrome.storage.sync.set({ usePanel: newValue });
         
-        // content script에 설정 변경 알림
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { usePanel: newValue, useTooltip }
+                settings: { usePanel: newValue, useTooltip, useFullMode }
             });
         }
     };
@@ -34,12 +35,25 @@ const PopupPanel: React.FC = () => {
         setUseTooltip(newValue);
         await chrome.storage.sync.set({ useTooltip: newValue });
         
-        // content script에 설정 변경 알림
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { usePanel, useTooltip: newValue }
+                settings: { usePanel, useTooltip: newValue, useFullMode }
+            });
+        }
+    };
+
+    const handleFullModeToggle = async () => {
+        const newValue = !useFullMode;
+        setUseFullMode(newValue);
+        await chrome.storage.sync.set({ useFullMode: newValue });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { usePanel, useTooltip, useFullMode: newValue }
             });
         }
     };
@@ -82,6 +96,22 @@ const PopupPanel: React.FC = () => {
                         `}
                     >
                         {useTooltip ? '활성화' : '비활성화'}
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm">전체 번역 모드</span>
+                    <button
+                        onClick={handleFullModeToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${useFullMode 
+                                ? 'bg-orange-600 hover:bg-orange-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {useFullMode ? '활성화' : '비활성화'}
                     </button>
                 </div>
 

@@ -32,6 +32,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'UPDATE_SETTINGS') {
         extensionInstance.usePanel = message.settings.usePanel;
         extensionInstance.useTooltip = message.settings.useTooltip;
+        extensionInstance.useFullMode = message.settings.useFullMode;
+        
+        if (message.settings.useFullMode) {
+            extensionInstance.applyFullMode();
+        } else {
+            window.location.reload();  // 전체 모드 비활성화 시 페이지 새로고침
+        }
         return true;
     }
 
@@ -62,6 +69,7 @@ class TranslationExtension {
     private showInTooltip: boolean = false;  // 추가
     public usePanel: boolean = true;
     public useTooltip: boolean = false;
+    public useFullMode: boolean = false;
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -72,9 +80,15 @@ class TranslationExtension {
         this.initialize();
         
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode'], (result) => {
             this.usePanel = result.usePanel ?? true;
             this.useTooltip = result.useTooltip ?? false;
+            this.useFullMode = result.useFullMode ?? false;
+            
+            // 전체 모드가 활성화되어 있으면 즉시 적용
+            if (this.useFullMode) {
+                this.applyFullMode();
+            }
         });
     }
 
@@ -411,7 +425,7 @@ Please respond in the following JSON format only:
             // 페이지 텍스트만 변경하고 번역 패널은 그대로 유지
             this.updatePageLayout();
         } else {
-            // 페이지 새로고으로 원�� 상태로 복구
+            // 페이지 새로고으로 원 상태로 복구
             window.location.reload();
         }
     }
@@ -443,7 +457,7 @@ Please respond in the following JSON format only:
                     line-height: ${originalStyles.lineHeight};
                 `;
 
-                // 원 텍스트 (왼���)
+                // 원 텍스트 (왼)
                 const originalDiv = document.createElement('div');
                 originalDiv.textContent = originalText;
                 originalDiv.style.cssText = `
@@ -547,6 +561,50 @@ Please respond in the following JSON format only:
         // 텍스트 요소 다시 처리
         this.processTextElements();
         logger.log('content', `Translation display mode set to ${showInTooltip ? 'tooltip' : 'panel'}`);
+    }
+
+    public async applyFullMode(): Promise<void> {
+        const textElements = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th'))
+            .filter(el => {
+                const text = el.textContent?.trim();
+                return text && text.length > 0 && getComputedStyle(el).display !== 'none';
+            });
+
+        for (const element of textElements) {
+            const originalText = element.textContent?.trim() || '';
+            if (originalText.length < 2) continue;
+
+            try {
+                const translation = await this.googleTranslate(originalText);
+                
+                const container = document.createElement('div');
+                container.className = 'translation-full-mode';
+                container.style.cssText = `
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.5rem;
+                    margin: ${getComputedStyle(element).margin};
+                `;
+
+                // 원본 요소의 스타일을 복사
+                const originalElement = element.cloneNode(true) as HTMLElement;
+                
+                // 번역 요소 생성
+                const translationElement = document.createElement('div');
+                translationElement.textContent = translation;
+                translationElement.style.cssText = `
+                    color: #666;
+                    font-style: italic;
+                    font-size: 0.9em;
+                `;
+
+                container.appendChild(originalElement);
+                container.appendChild(translationElement);
+                element.replaceWith(container);
+            } catch (error) {
+                logger.log('content', 'Translation failed for element', error);
+            }
+        }
     }
 }
 
