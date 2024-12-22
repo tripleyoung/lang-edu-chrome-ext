@@ -29,12 +29,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 
+    if (message.type === 'UPDATE_SETTINGS') {
+        extensionInstance.usePanel = message.settings.usePanel;
+        extensionInstance.useTooltip = message.settings.useTooltip;
+        return true;
+    }
+
+    if (message.type === 'PANEL_CREATED') {
+        chrome.windows.get(message.windowId, (window) => {
+            TranslationExtension.panelWindow = window;
+        });
+        return true;
+    }
+
     return true;
 });
 
 class TranslationExtension {
     private static instance: TranslationExtension | null = null;
-    private static panelWindow: Window | null = null;
+    public static panelWindow: chrome.windows.Window | null = null;
     
     private isEnabled: boolean = true;
     private isProcessing: boolean = false;
@@ -47,6 +60,8 @@ class TranslationExtension {
     private eventListeners: Map<HTMLElement, Function> = new Map();  // 이벤트 리스너 저장용
     private fullPageContent: string = '';  // 전체 텍스트 저장용
     private showInTooltip: boolean = false;  // 추가
+    public usePanel: boolean = true;
+    public useTooltip: boolean = false;
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -55,7 +70,12 @@ class TranslationExtension {
         TranslationExtension.instance = this;
         extensionInstance = this;  // 전역 변수에 인스턴스 저장
         this.initialize();
-        this.createTranslationBar();
+        
+        // 저장된 설정 불러오기
+        chrome.storage.sync.get(['usePanel', 'useTooltip'], (result) => {
+            this.usePanel = result.usePanel ?? true;
+            this.useTooltip = result.useTooltip ?? false;
+        });
     }
 
     private async initialize(): Promise<void> {
@@ -161,7 +181,7 @@ Please respond in the following JSON format only:
     }
 
     public processTextElements(): void {
-        if (!this.isEnabled) return;  // 읽기 모드와 상관없이 호버 가능하도록
+        if (!this.isEnabled) return;  // 읽기 모드와 상관이 호버 가능하도록
 
         const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
             // 이미 처리된 요소 제외
@@ -208,7 +228,6 @@ Please respond in the following JSON format only:
                             logger.log('content', 'Color change failed', e);
                         }
 
-                        // 텍스트 추출 및 번역 패널로 전송 (읽기 모드와 상관없이)
                         const text = Array.from(htmlEl.childNodes)
                             .filter(node => node.nodeType === Node.TEXT_NODE)
                             .map(node => node.textContent?.trim())
@@ -216,55 +235,48 @@ Please respond in the following JSON format only:
                             .join(' ');
 
                         if (text) {
-                            if (this.showInTooltip) {
-                                // 툴팁 모드
-                                try {
-                                    const translation = await this.googleTranslate(text);
-                                    const tooltipDiv = document.createElement('div');
-                                    tooltipDiv.className = 'translation-tooltip';
-                                    tooltipDiv.style.cssText = `
-                                        position: absolute;
-                                        top: 100%;
-                                        left: 0;
-                                        background-color: rgba(0, 0, 0, 0.8);
-                                        color: white;
-                                        padding: 8px 12px;
-                                        border-radius: 4px;
-                                        font-size: 0.9em;
-                                        z-index: 1000;
-                                        max-width: 300px;
-                                        white-space: pre-wrap;
-                                        margin-top: 5px;
-                                    `;
-                                    tooltipDiv.textContent = translation;
-                                    htmlEl.style.position = 'relative';
-                                    htmlEl.appendChild(tooltipDiv);
+                            const translation = await this.googleTranslate(text);
 
-                                    const mouseLeaveHandler = () => {
-                                        tooltipDiv.remove();
-                                        htmlEl.removeEventListener('mouseleave', mouseLeaveHandler);
-                                    };
-                                    htmlEl.addEventListener('mouseleave', mouseLeaveHandler);
-                                } catch (error) {
-                                    logger.log('content', 'Tooltip translation failed', error);
-                                }
-                            } else {
+                            if (this.useTooltip) {
+                                // 툴팁 모드
+                                const tooltipDiv = document.createElement('div');
+                                tooltipDiv.className = 'translation-tooltip';
+                                tooltipDiv.style.cssText = `
+                                    position: absolute;
+                                    top: 100%;
+                                    left: 0;
+                                    right: 0;
+                                    width: 100%;
+                                    background-color: rgba(0, 0, 0, 0.8);
+                                    color: white;
+                                    padding: 8px 12px;
+                                    border-radius: 4px;
+                                    font-size: 0.9em;
+                                    z-index: 1000;
+                                    white-space: pre-wrap;
+                                    margin-top: 5px;
+                                    box-sizing: border-box;
+                                `;
+                                tooltipDiv.textContent = translation;
+                                htmlEl.style.position = 'relative';
+                                htmlEl.appendChild(tooltipDiv);
+
+                                const mouseLeaveHandler = () => {
+                                    tooltipDiv.remove();
+                                    htmlEl.removeEventListener('mouseleave', mouseLeaveHandler);
+                                };
+                                htmlEl.addEventListener('mouseleave', mouseLeaveHandler);
+                            } else if (this.usePanel) {
                                 // 패널 모드
-                                await this.createTranslationBar();
-                                this.showPanel();
-                                try {
-                                    const translation = await this.googleTranslate(text);
-                                    await this.sendTranslationToPanel(text, {
-                                        translation: translation,
-                                        grammar: '',
-                                        definition: '',
-                                        words: [],
-                                        idioms: []
-                                    });
-                                } catch (error) {
-                                    await this.sendTranslationToPanel(text);
-                                    logger.log('content', 'Panel translation failed', error);
-                                }
+                                await this.createTranslationBar();  // 먼저 패널 생성
+                                await this.showPanel();  // 패널 표시
+                                await this.sendTranslationToPanel(text, {  // 번역 전송
+                                    translation: translation,
+                                    grammar: '',
+                                    definition: '',
+                                    words: [],
+                                    idioms: []
+                                });
                             }
                         }
                     } catch (error) {
@@ -329,11 +341,14 @@ Please respond in the following JSON format only:
     }
 
     private async createTranslationBar(): Promise<void> {
-        // 이미 패널이 있으면 새로 생성하지 않음
-        if (TranslationExtension.panelWindow && !TranslationExtension.panelWindow.closed) {
-            return;
+        if (TranslationExtension.panelWindow?.id) {
+            try {
+                await chrome.windows.get(TranslationExtension.panelWindow.id);
+                return; // 창이 존재하면 리턴
+            } catch {
+                // 창이 존재하지 않으면 계속 진행
+            }
         }
-
         try {
             const response = await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
             if (!response || !response.success) {
@@ -345,18 +360,24 @@ Please respond in the following JSON format only:
     }
 
     // 패널 표시/숨김 메서드 추가
-    private showPanel(): void {
-        if (TranslationExtension.panelWindow && TranslationExtension.panelWindow.closed) {
-            // 패널이 닫혔다면 다시 생성
-            this.createTranslationBar();
-        } else if (TranslationExtension.panelWindow) {
-            TranslationExtension.panelWindow.focus();
+    private async showPanel(): Promise<void> {
+        if (TranslationExtension.panelWindow?.id) {
+            try {
+                await chrome.windows.get(TranslationExtension.panelWindow.id);
+                chrome.windows.update(TranslationExtension.panelWindow.id, { 
+                    focused: true,
+                    drawAttention: true 
+                });
+            } catch {
+                // 창이 존재하지 않으면 다시 생성
+                this.createTranslationBar();
+            }
         }
     }
 
     private hidePanel(): void {
         // 마우스가 벗어날 때는 패널을 숨기지 않음
-        // 사용자가 직접 닫거나 페이지를 떠날 때만 닫힘
+        // 사용자가 직접 닫거나 이지를 떠날 때만 닫힘
         return;
     }
 
@@ -387,10 +408,10 @@ Please respond in the following JSON format only:
         logger.log('content', `Reader mode ${enabled ? 'enabled' : 'disabled'}`);
 
         if (enabled) {
-            // 페이지의 텍스트만 변경하고 번역 패널은 그대로 유지
+            // 페이지 텍스트만 변경하고 번역 패널은 그대로 유지
             this.updatePageLayout();
         } else {
-            // 페이지 새로고���으로 원래 상태로 복구
+            // 페이지 새로고으로 원�� 상태로 복구
             window.location.reload();
         }
     }
@@ -422,7 +443,7 @@ Please respond in the following JSON format only:
                     line-height: ${originalStyles.lineHeight};
                 `;
 
-                // 원�� 텍스트 (왼쪽)
+                // 원 텍스트 (왼���)
                 const originalDiv = document.createElement('div');
                 originalDiv.textContent = originalText;
                 originalDiv.style.cssText = `

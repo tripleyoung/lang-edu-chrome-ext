@@ -1,84 +1,108 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { Card, CardContent } from "./components/ui/card";
-import { Switch } from "./components/ui/switch";
-import { ExtensionState } from './types';
 import './styles.css';
-import { Logger } from './logger';
 
-const PopupApp: React.FC = () => {
-    const [settings, setSettings] = React.useState<ExtensionState>({
-        isEnabled: true,
-        targetLanguage: 'ko'
-    });
+const PopupPanel: React.FC = () => {
+    const [usePanel, setUsePanel] = useState(true);
+    const [useTooltip, setUseTooltip] = useState(false);
 
-    const languages = [
-        { label: '한국어', value: 'ko' },
-        { label: '영어', value: 'en' },
-        { label: '일본어', value: 'ja' }
-    ];
-
-    React.useEffect(() => {
-        chrome.storage.sync.get(
-            ['targetLanguage', 'isEnabled'],
-            (result: Partial<ExtensionState>) => {
-                setSettings(prev => ({
-                    ...prev,
-                    ...result
-                }));
-            }
-        );
+    useEffect(() => {
+        // 저장된 설정 불러오기
+        chrome.storage.sync.get(['usePanel', 'useTooltip'], (result) => {
+            setUsePanel(result.usePanel ?? true);
+            setUseTooltip(result.useTooltip ?? false);
+        });
     }, []);
 
-    const handleSettingChange = async (key: keyof ExtensionState, value: string | boolean) => {
-        const newSettings = { ...settings, [key]: value };
-        setSettings(newSettings);
-        await chrome.storage.sync.set(newSettings);
+    const handlePanelToggle = async () => {
+        const newValue = !usePanel;
+        setUsePanel(newValue);
+        await chrome.storage.sync.set({ usePanel: newValue });
+        
+        // content script에 설정 변경 알림
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { usePanel: newValue, useTooltip }
+            });
+        }
+    };
+
+    const handleTooltipToggle = async () => {
+        const newValue = !useTooltip;
+        setUseTooltip(newValue);
+        await chrome.storage.sync.set({ useTooltip: newValue });
+        
+        // content script에 설정 변경 알림
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { usePanel, useTooltip: newValue }
+            });
+        }
+    };
+
+    const openTranslationPanel = async () => {
+        await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
     };
 
     return (
-        <div className="w-[320px] p-4">
-            <Card>
-                <CardContent className="pt-6">
-                    <div className="flex flex-col gap-4">
-                        <div className="flex justify-between items-center">
-                            <span className="text-lg font-medium">번역 기능</span>
-                            <Switch
-                                checked={settings.isEnabled}
-                                onCheckedChange={(checked) => handleSettingChange('isEnabled', checked)}
-                            />
-                        </div>
-                        
-                        <div className="flex flex-col gap-2">
-                            <label className="text-sm font-medium">번역할 언어</label>
-                            <select
-                                value={settings.targetLanguage}
-                                onChange={(e) => handleSettingChange('targetLanguage', e.target.value)}
-                                className="w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                {languages.map((lang) => (
-                                    <option key={lang.value} value={lang.value}>
-                                        {lang.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                </CardContent>
-            </Card>
-            <button onClick={() => Logger.getInstance().downloadLogs()}>
-                로그 다운로드
-            </button>
+        <div className="p-4 bg-gray-900 text-white min-w-[300px]">
+            <h2 className="text-xl font-bold text-yellow-400 mb-4">번역 설정</h2>
+            
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm">번역 패널 사용</span>
+                    <button
+                        onClick={handlePanelToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${usePanel 
+                                ? 'bg-green-600 hover:bg-green-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {usePanel ? '사용' : '미사용'}
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm">툴팁 모드</span>
+                    <button
+                        onClick={handleTooltipToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${useTooltip 
+                                ? 'bg-purple-600 hover:bg-purple-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {useTooltip ? '활성화' : '비활성화'}
+                    </button>
+                </div>
+
+                <div className="mt-6">
+                    <button
+                        onClick={openTranslationPanel}
+                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
+                    >
+                        번역 패널 열기
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };
 
-const container = document.getElementById('root');
-if (container) {
-    const root = ReactDOM.createRoot(container);
-    root.render(
+const root = document.getElementById('root');
+if (root) {
+    ReactDOM.createRoot(root).render(
         <React.StrictMode>
-            <PopupApp />
+            <PopupPanel />
         </React.StrictMode>
     );
 } 
