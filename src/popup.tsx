@@ -1,22 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
+import { messages, Language } from './i18n/messages';
 
 const PopupPanel: React.FC = () => {
     const [usePanel, setUsePanel] = useState(true);
     const [useTooltip, setUseTooltip] = useState(false);
     const [useFullMode, setUseFullMode] = useState(false);
     const [targetLanguage, setTargetLanguage] = useState('ko');
+    const [currentLanguage, setCurrentLanguage] = useState<Language>('en');
 
     useEffect(() => {
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage', 'uiLanguage'], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
             setUseFullMode(result.useFullMode ?? false);
             setTargetLanguage(result.targetLanguage ?? 'ko');
+            
+            // UI 언어 설정
+            const browserLang = navigator.language.split('-')[0] as Language;
+            setCurrentLanguage(result.uiLanguage || (messages[browserLang] ? browserLang : 'en'));
         });
     }, []);
+
+    const t = (key: keyof typeof messages['en']) => {
+        return messages[currentLanguage][key];
+    };
 
     const handlePanelToggle = async () => {
         const newValue = !usePanel;
@@ -66,17 +76,23 @@ const PopupPanel: React.FC = () => {
         await chrome.storage.sync.set({ targetLanguage: newValue });
     };
 
+    const handleUILanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const newValue = e.target.value as Language;
+        setCurrentLanguage(newValue);
+        await chrome.storage.sync.set({ uiLanguage: newValue });
+    };
+
     const openTranslationPanel = async () => {
         await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
     };
 
     return (
         <div className="p-4 bg-gray-900 text-white min-w-[300px]">
-            <h2 className="text-xl font-bold text-yellow-400 mb-4">번역 설정</h2>
+            <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
             
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                    <span className="text-sm">번역 패널 사용</span>
+                    <span className="text-sm">{t('usePanel')}</span>
                     <button
                         onClick={handlePanelToggle}
                         className={`
@@ -87,12 +103,12 @@ const PopupPanel: React.FC = () => {
                             }
                         `}
                     >
-                        {usePanel ? '사용' : '미사용'}
+                        {usePanel ? t('use') : t('notUse')}
                     </button>
                 </div>
 
                 <div className="flex items-center justify-between">
-                    <span className="text-sm">툴팁 모드</span>
+                    <span className="text-sm">{t('useTooltip')}</span>
                     <button
                         onClick={handleTooltipToggle}
                         className={`
@@ -103,12 +119,12 @@ const PopupPanel: React.FC = () => {
                             }
                         `}
                     >
-                        {useTooltip ? '활성화' : '비활성화'}
+                        {useTooltip ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 
                 <div className="flex items-center justify-between">
-                    <span className="text-sm">전체 번역 모드</span>
+                    <span className="text-sm">{t('useFullMode')}</span>
                     <button
                         onClick={handleFullModeToggle}
                         className={`
@@ -119,12 +135,25 @@ const PopupPanel: React.FC = () => {
                             }
                         `}
                     >
-                        {useFullMode ? '활성화' : '비활성화'}
+                        {useFullMode ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 
                 <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">번역 언어</span>
+                    <span className="text-sm">{t('uiLanguage')}</span>
+                    <select 
+                        value={currentLanguage}
+                        onChange={handleUILanguageChange}
+                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
+                    >
+                        <option value="ko">한국어</option>
+                        <option value="en">English</option>
+                        <option value="ja">日本語</option>
+                    </select>
+                </div>
+
+                <div className="flex items-center justify-between mt-4">
+                    <span className="text-sm">{t('targetLanguage')}</span>
                     <select 
                         value={targetLanguage}
                         onChange={handleLanguageChange}
@@ -144,7 +173,7 @@ const PopupPanel: React.FC = () => {
                         onClick={openTranslationPanel}
                         className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
                     >
-                        번역 패널 열기
+                        {t('openPanel')}
                     </button>
                 </div>
             </div>
