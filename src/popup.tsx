@@ -9,10 +9,11 @@ const PopupPanel: React.FC = () => {
     const [useFullMode, setUseFullMode] = useState(false);
     const [targetLanguage, setTargetLanguage] = useState('ko');
     const [currentLanguage, setCurrentLanguage] = useState<Language>('en');
+    const [autoOpenPanel, setAutoOpenPanel] = useState(false);
 
     useEffect(() => {
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage', 'uiLanguage'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'targetLanguage', 'uiLanguage', 'autoOpenPanel'], (result) => {
             setUsePanel(result.usePanel ?? true);
             setUseTooltip(result.useTooltip ?? false);
             setUseFullMode(result.useFullMode ?? false);
@@ -21,6 +22,7 @@ const PopupPanel: React.FC = () => {
             // UI 언어 설정
             const browserLang = navigator.language.split('-')[0] as Language;
             setCurrentLanguage(result.uiLanguage || (messages[browserLang] ? browserLang : 'en'));
+            setAutoOpenPanel(result.autoOpenPanel ?? false);
         });
     }, []);
 
@@ -80,6 +82,25 @@ const PopupPanel: React.FC = () => {
         const newValue = e.target.value as Language;
         setCurrentLanguage(newValue);
         await chrome.storage.sync.set({ uiLanguage: newValue });
+    };
+
+    const handleAutoOpenPanelToggle = async () => {
+        const newValue = !autoOpenPanel;
+        setAutoOpenPanel(newValue);
+        await chrome.storage.sync.set({ autoOpenPanel: newValue });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { 
+                    usePanel, 
+                    useTooltip, 
+                    useFullMode,
+                    autoOpenPanel: newValue 
+                }
+            });
+        }
     };
 
     const openTranslationPanel = async () => {
@@ -166,6 +187,22 @@ const PopupPanel: React.FC = () => {
                         <option value="es">Español</option>
                         <option value="fr">Français</option>
                     </select>
+                </div>
+
+                <div className="flex items-center justify-between mt-4">
+                    <span className="text-sm">자동 패널 열기</span>
+                    <button
+                        onClick={handleAutoOpenPanelToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${autoOpenPanel 
+                                ? 'bg-blue-600 hover:bg-blue-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {autoOpenPanel ? '활성화' : '비활성화'}
+                    </button>
                 </div>
 
                 <div className="mt-6">

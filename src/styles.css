@@ -50,4 +50,22 @@ body {
     transform: translateY(10px);
     transition: opacity 300ms, transform 300ms;
 }
+
+.translation-tooltip {
+    position: fixed;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    z-index: 2147483647;
+    max-width: 300px;
+    pointer-events: none;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: opacity 0.2s ease;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+}
  

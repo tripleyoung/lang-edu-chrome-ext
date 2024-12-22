@@ -69,6 +69,10 @@ class TranslationExtension {
     public usePanel: boolean = true;
     public useTooltip: boolean = false;
     public useFullMode: boolean = false;
+    private translationCache: Map<string, string> = new Map();  // 번역 캐시
+    private dictionaryCache: Map<string, any> = new Map();      // 사전 캐시
+    private debounceTime: number = 300;  // 디바운스 시간 증가
+    public autoOpenPanel: boolean = false;  // 자동 오픈 모드 추가
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -79,14 +83,20 @@ class TranslationExtension {
         this.initialize();
         
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'autoOpenPanel'], (result) => {
             this.usePanel = result.usePanel ?? true;
             this.useTooltip = result.useTooltip ?? false;
             this.useFullMode = result.useFullMode ?? false;
+            this.autoOpenPanel = result.autoOpenPanel ?? false;
             
             // 전체 모드가 활성화되어 있으면 즉시 적용
             if (this.useFullMode) {
                 this.applyFullMode();
+            }
+            
+            // 자동 오픈 모드가 활성화되어 있으면 패널 생성
+            if (this.autoOpenPanel) {
+                this.createTranslationBar();
             }
         });
     }
@@ -157,107 +167,15 @@ Please respond in the following JSON format only:
     }
 
     public processTextElements(): void {
-        if (!this.isEnabled) return;  // 읽기 모드와 상관이 호버 가능하도록
+        if (!this.isEnabled) return;
 
-        const textElements = Array.from(document.querySelectorAll('*')).filter(el => {
-            // 이미 처리된 요소 제외
-            if (el.hasAttribute('data-translation-processed')) return false;
-            if (el.closest('.translation-container')) return false;
-            if (el.closest('.reader-mode-container')) return false;  // 읽기 모드 컨테이너는 제외
+        // 성능 개��을 위한 요소 선택자 최적화
+        const selector = 'p, h1, h2, h3, h4, h5, h6, li, td, th, div:not([class*="translation"])';
+        const textElements = document.querySelectorAll(selector);
 
-            // 제외할 태그들
-            const excludeTags = [
-                'SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 
-                'SELECT', 'TEXTAREA', 'HEAD', 'META', 'LINK', 'TITLE',
-                'SVG', 'PATH', 'IMG', 'VIDEO', 'AUDIO'
-            ];
-            if (excludeTags.includes(el.tagName)) return false;
-
-            // 직접적인 스트리밍 노드 확인
-            const hasText = Array.from(el.childNodes)
-                .filter(node => node.nodeType === Node.TEXT_NODE)
-                .some(node => {
-                    const text = node.textContent?.trim() || '';
-                    return text.length >= 2 && !/^[\s\d\W]+$/.test(text);
-                });
-
-            return hasText;
-        });
-
-        textElements.forEach(element => {
-            const htmlEl = element as HTMLElement;
-            let originalColor = '';
-
-            const mouseEnterHandler = async () => {
-                if (this.debounceTimer) {
-                    clearTimeout(this.debounceTimer);
-                }
-
-                this.debounceTimer = window.setTimeout(async () => {
-                    try {
-                        const text = Array.from(htmlEl.childNodes)
-                            .filter(node => node.nodeType === Node.TEXT_NODE)
-                            .map(node => node.textContent?.trim())
-                            .filter(text => text && text.length > 0)
-                            .join(' ');
-
-                        if (text) {
-                            const translatedText = await this.googleTranslate(text);
-                            const words = await this.analyzeWords(text);
-                            
-                            if (this.useTooltip) {
-                                // 툴팁 드
-                                const tooltipDiv = document.createElement('div');
-                                tooltipDiv.className = 'translation-tooltip';
-                                tooltipDiv.style.cssText = `
-                                    position: absolute;
-                                    top: 100%;
-                                    left: 0;
-                                    right: 0;
-                                    width: 100%;
-                                    background-color: rgba(0, 0, 0, 0.8);
-                                    color: white;
-                                    padding: 8px 12px;
-                                    border-radius: 4px;
-                                    font-size: 0.9em;
-                                    z-index: 1000;
-                                    white-space: pre-wrap;
-                                    margin-top: 5px;
-                                    box-sizing: border-box;
-                                `;
-                                tooltipDiv.textContent = translatedText;
-                                htmlEl.style.position = 'relative';
-                                htmlEl.appendChild(tooltipDiv);
-
-                                const mouseLeaveHandler = () => {
-                                    tooltipDiv.remove();
-                                    htmlEl.removeEventListener('mouseleave', mouseLeaveHandler);
-                                };
-                                htmlEl.addEventListener('mouseleave', mouseLeaveHandler);
-                            } else if (this.usePanel) {
-                                // 패널 모드
-                                await this.createTranslationBar();  // 먼저 패널 생성
-                                await this.showPanel();  // 패널 표시
-                                
-                                await this.sendTranslationToPanel(text, {
-                                    translation: translatedText,
-                                    grammar: '',
-                                    definition: '',
-                                    words: words,  // 단어 분석 결과 포함
-                                    idioms: []
-                                });
-                            }
-                        }
-                    } catch (error) {
-                        logger.log('content', 'Error in mouseenter handler', error);
-                    }
-                }, 100);
-            };
-
-            // 이벤트 리스너 저장
-            this.eventListeners.set(htmlEl, mouseEnterHandler);
-            htmlEl.addEventListener('mouseenter', mouseEnterHandler);
-        });
+        // 이벤트 위임 사용
+        document.removeEventListener('mouseover', this.handleMouseOver);
+        document.addEventListener('mouseover', this.handleMouseOver);
     }
 
     private setupObserver(): void {
@@ -604,6 +522,150 @@ Please respond in the following JSON format only:
 
         return results;
     }
+
+    // 텍스트 추출 함수
+    private getElementText(element: HTMLElement): string {
+        return Array.from(element.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent?.trim())
+            .filter(Boolean)
+            .join(' ');
+    }
+
+    // 툴팁 표시 함수
+    private showTooltip(element: HTMLElement, text: string): void {
+        // 기존 툴팁들 모두 제거
+        document.querySelectorAll('.translation-tooltip').forEach(tooltip => tooltip.remove());
+
+        // 이미 처리된 요소인지 확인
+        if (element.hasAttribute('data-has-tooltip')) {
+            return;
+        }
+
+        const tooltipDiv = document.createElement('div');
+        tooltipDiv.className = 'translation-tooltip';
+        tooltipDiv.textContent = text;
+        tooltipDiv.style.opacity = '0';  // 초기에는 숨김
+        
+        // 툴팁을 body에 직접 추가
+        document.body.appendChild(tooltipDiv);
+
+        // 요소에 툴팁 표시 중임을 표시
+        element.setAttribute('data-has-tooltip', 'true');
+
+        const updateTooltipPosition = (e: MouseEvent) => {
+            const offset = 15;
+            let x = e.pageX + offset;
+            let y = e.pageY + offset;
+
+            const tooltipRect = tooltipDiv.getBoundingClientRect();
+            const maxX = window.innerWidth - tooltipRect.width;
+            const maxY = window.innerHeight - tooltipRect.height;
+
+            if (x > maxX) x = e.pageX - tooltipRect.width - offset;
+            if (y > maxY) y = e.pageY - tooltipRect.height - offset;
+
+            tooltipDiv.style.left = `${x}px`;
+            tooltipDiv.style.top = `${y}px`;
+            tooltipDiv.style.opacity = '1';  // 위치가 설정된 후 표시
+        };
+
+        // 초기 위치 설정을 위한 이벤트 핸들러
+        const initialPositionHandler = (e: MouseEvent) => {
+            updateTooltipPosition(e);
+            element.removeEventListener('mousemove', initialPositionHandler);
+        };
+        element.addEventListener('mousemove', initialPositionHandler);
+
+        // 마우스 이동 핸들러
+        const mouseMoveHandler = (e: MouseEvent) => updateTooltipPosition(e);
+        document.addEventListener('mousemove', mouseMoveHandler);
+
+        // 툴팁 제거
+        const removeTooltip = () => {
+            tooltipDiv.remove();
+            document.removeEventListener('mousemove', mouseMoveHandler);
+            element.removeEventListener('mouseleave', removeTooltip);
+            element.removeAttribute('data-has-tooltip');
+        };
+
+        element.addEventListener('mouseleave', removeTooltip);
+    }
+
+    // 패널 표시 최적화
+    private async showTranslationPanel(text: string, translatedText: string): Promise<void> {
+        try {
+            // 패널이 없으면 생성
+            if (!TranslationExtension.panelWindow?.id) {
+                await this.createTranslationBar();
+                // 패널이 완전히 생성될 때까지 잠시 대기
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // 단어 분석 캐싱
+            let words = this.dictionaryCache.get(text);
+            if (!words) {
+                words = await this.analyzeWords(text);
+                this.dictionaryCache.set(text, words);
+            }
+
+            await this.sendTranslationToPanel(text, {
+                translation: translatedText,
+                grammar: '',
+                definition: '',
+                words,
+                idioms: []
+            });
+        } catch (error) {
+            logger.log('content', 'Error showing translation panel', error);
+        }
+    }
+
+    // 이벤트 위임 핸들러
+    private handleMouseOver = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!this.isValidTextElement(target)) return;
+
+        const text = this.getElementText(target);
+        if (!text) return;
+
+        this.mouseEnterHandler(target, text);
+    };
+
+    private isValidTextElement(element: HTMLElement): boolean {
+        if (element.hasAttribute('data-translation-processed')) return false;
+        if (element.closest('.translation-container')) return false;
+        
+        const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'];
+        return !excludeTags.includes(element.tagName);
+    }
+
+    private mouseEnterHandler = async (element: HTMLElement, text: string) => {
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+        }
+
+        this.debounceTimer = window.setTimeout(async () => {
+            try {
+                // 캐시된 번역 확인
+                let translatedText = this.translationCache.get(text);
+                if (!translatedText) {
+                    translatedText = await this.googleTranslate(text);
+                    this.translationCache.set(text, translatedText);
+                }
+
+                if (this.useTooltip) {
+                    this.showTooltip(element, translatedText);
+                }
+                
+                if (this.usePanel || this.autoOpenPanel) {
+                    await this.showTranslationPanel(text, translatedText);
+                }
+            } catch (error) {
+                logger.log('content', 'Error in mouseenter handler', error);
+            }
+        }, this.debounceTime);
+    };
 }
 
 // content.ts 파일 상단에 즉시 실행 함수 추가
