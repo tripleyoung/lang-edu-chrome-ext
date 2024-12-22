@@ -94,7 +94,7 @@ class TranslationExtension {
                 this.applyFullMode();
             }
             
-            // 자동 �� 모드가 활성화되어 있으면 패널 생성
+            // 자동 오픈 모드가 활성화되어 있으면 패널 생성
             if (this.autoOpenPanel) {
                 this.createTranslationBar();
             }
@@ -463,7 +463,7 @@ Please respond in the following JSON format only:
                     margin: ${getComputedStyle(element).margin};
                 `;
 
-                // 원본 요소의 스타일을 복사
+                // 원본 요소의 스타일�� 복사
                 const originalElement = element.cloneNode(true) as HTMLElement;
                 
                 // 번역 요소 생성
@@ -584,30 +584,46 @@ Please respond in the following JSON format only:
             // 패널이 없으면 생성
             if (!TranslationExtension.panelWindow?.id) {
                 await this.createTranslationBar();
-                // 패널이 완전히 생성될 때까지 잠시 대기
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
 
-            // 단어 분석 캐싱
-            let words = this.dictionaryCache.get(text);
-            if (!words) {
-                words = await this.analyzeWords(text);
-                this.dictionaryCache.set(text, words);
-            }
-
+            // 먼저 기본 번역 결과를 보여줌
             await this.sendTranslationToPanel(text, {
                 translation: translatedText,
                 grammar: '',
                 definition: '',
-                words,
+                words: [],
                 idioms: []
             });
+
+            // 단어 분석은 비동기적으로 처리
+            setTimeout(async () => {
+                try {
+                    let words = this.dictionaryCache.get(text);
+                    if (!words) {
+                        words = await this.analyzeWords(text);
+                        this.dictionaryCache.set(text, words);
+                    }
+
+                    // 단어 분석이 완료되면 UI 업데이트
+                    await this.sendTranslationToPanel(text, {
+                        translation: translatedText,
+                        grammar: '',
+                        definition: '',
+                        words,
+                        idioms: []
+                    });
+                } catch (error) {
+                    logger.log('content', 'Error analyzing words', error);
+                }
+            }, 0);
+
         } catch (error) {
             logger.log('content', 'Error showing translation panel', error);
         }
     }
 
-    // 이벤트 위임 핸��러
+    // 이벤트 위임 핸러
     private handleMouseOver = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         
