@@ -3,93 +3,130 @@ import ReactDOM from 'react-dom/client';
 import './styles.css';
 import { messages, Language } from './i18n/messages';
 
+interface Settings {
+    usePanel: boolean;
+    useTooltip: boolean;
+    useFullMode: boolean;
+    autoOpenPanel: boolean;
+    useAudioFeature: boolean;
+    useWordTooltip: boolean;
+    nativeLanguage: Language;
+    learningLanguage: Language;
+}
+
+// 메시지 타입 정의
+type MessageType = typeof messages['ko'];
+type MessageKey = keyof MessageType;
+
 const PopupPanel: React.FC = () => {
-    const [usePanel, setUsePanel] = useState(true);
-    const [useTooltip, setUseTooltip] = useState(false);
-    const [useFullMode, setUseFullMode] = useState(false);
-    const [useAudioFeature, setUseAudioFeature] = useState(false);
-    const [nativeLanguage, setNativeLanguage] = useState<Language>('ko');
-    const [learningLanguage, setLearningLanguage] = useState<Language>('en');
+    const [settings, setSettings] = useState<Settings>({
+        usePanel: true,
+        useTooltip: false,
+        useFullMode: false,
+        autoOpenPanel: false,
+        useAudioFeature: false,
+        useWordTooltip: false,
+        nativeLanguage: 'ko',
+        learningLanguage: 'en'
+    });
 
     useEffect(() => {
         chrome.storage.sync.get([
             'usePanel', 
             'useTooltip', 
             'useFullMode', 
+            'autoOpenPanel', 
             'useAudioFeature',
-            'nativeLanguage', 
+            'useWordTooltip',
+            'nativeLanguage',
             'learningLanguage'
         ], (result) => {
-            setUsePanel(result.usePanel ?? true);
-            setUseTooltip(result.useTooltip ?? false);
-            setUseFullMode(result.useFullMode ?? false);
-            setUseAudioFeature(result.useAudioFeature ?? false);
-            setNativeLanguage((result.nativeLanguage as Language) || 'ko');
-            setLearningLanguage((result.learningLanguage as Language) || 'en');
+            setSettings({
+                usePanel: result.usePanel ?? true,
+                useTooltip: result.useTooltip ?? false,
+                useFullMode: result.useFullMode ?? false,
+                autoOpenPanel: result.autoOpenPanel ?? false,
+                useAudioFeature: result.useAudioFeature ?? false,
+                useWordTooltip: result.useWordTooltip ?? false,
+                nativeLanguage: result.nativeLanguage ?? 'ko',
+                learningLanguage: result.learningLanguage ?? 'en'
+            });
         });
     }, []);
 
-    const t = (key: keyof typeof messages['en']) => {
-        return messages[nativeLanguage][key];
+    // t 함수 수정
+    const t = (key: MessageKey): string => {
+        const currentLang = settings.nativeLanguage;
+        const langMessages = messages[currentLang] as MessageType;
+        return langMessages[key] || messages['en'][key];
     };
 
     const handlePanelToggle = async () => {
-        const newValue = !usePanel;
-        setUsePanel(newValue);
+        const newValue = !settings.usePanel;
+        setSettings({ ...settings, usePanel: newValue });
         await chrome.storage.sync.set({ usePanel: newValue });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { usePanel: newValue, useTooltip, useFullMode }
+                settings: { ...settings, usePanel: newValue }
             });
         }
     };
 
     const handleTooltipToggle = async () => {
-        const newValue = !useTooltip;
-        setUseTooltip(newValue);
+        const newValue = !settings.useTooltip;
+        setSettings({ ...settings, useTooltip: newValue });
         await chrome.storage.sync.set({ useTooltip: newValue });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { usePanel, useTooltip: newValue, useFullMode }
+                settings: { ...settings, useTooltip: newValue }
             });
         }
     };
 
     const handleFullModeToggle = async () => {
-        const newValue = !useFullMode;
-        setUseFullMode(newValue);
+        const newValue = !settings.useFullMode;
+        setSettings({ ...settings, useFullMode: newValue });
         await chrome.storage.sync.set({ useFullMode: newValue });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { usePanel, useTooltip, useFullMode: newValue }
+                settings: { ...settings, useFullMode: newValue }
             });
         }
     };
 
     const handleAudioFeatureToggle = async () => {
-        const newValue = !useAudioFeature;
-        setUseAudioFeature(newValue);
+        const newValue = !settings.useAudioFeature;
+        setSettings({ ...settings, useAudioFeature: newValue });
         await chrome.storage.sync.set({ useAudioFeature: newValue });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { 
-                    usePanel, 
-                    useTooltip, 
-                    useFullMode,
-                    useAudioFeature: newValue 
-                }
+                settings: { ...settings, useAudioFeature: newValue }
+            });
+        }
+    };
+
+    const handleWordTooltipToggle = async () => {
+        const newValue = !settings.useWordTooltip;
+        setSettings({ ...settings, useWordTooltip: newValue });
+        await chrome.storage.sync.set({ useWordTooltip: newValue });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { ...settings, useWordTooltip: newValue }
             });
         }
     };
@@ -109,13 +146,13 @@ const PopupPanel: React.FC = () => {
                         onClick={handlePanelToggle}
                         className={`
                             px-4 py-2 rounded-lg transition-all duration-300
-                            ${usePanel 
+                            ${settings.usePanel 
                                 ? 'bg-green-600 hover:bg-green-700' 
                                 : 'bg-gray-600 hover:bg-gray-700'
                             }
                         `}
                     >
-                        {usePanel ? t('use') : t('notUse')}
+                        {settings.usePanel ? t('use') : t('notUse')}
                     </button>
                 </div>
 
@@ -125,13 +162,13 @@ const PopupPanel: React.FC = () => {
                         onClick={handleTooltipToggle}
                         className={`
                             px-4 py-2 rounded-lg transition-all duration-300
-                            ${useTooltip 
+                            ${settings.useTooltip 
                                 ? 'bg-purple-600 hover:bg-purple-700' 
                                 : 'bg-gray-600 hover:bg-gray-700'
                             }
                         `}
                     >
-                        {useTooltip ? t('enabled') : t('disabled')}
+                        {settings.useTooltip ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 
@@ -141,13 +178,13 @@ const PopupPanel: React.FC = () => {
                         onClick={handleFullModeToggle}
                         className={`
                             px-4 py-2 rounded-lg transition-all duration-300
-                            ${useFullMode 
+                            ${settings.useFullMode 
                                 ? 'bg-orange-600 hover:bg-orange-700' 
                                 : 'bg-gray-600 hover:bg-gray-700'
                             }
                         `}
                     >
-                        {useFullMode ? t('enabled') : t('disabled')}
+                        {settings.useFullMode ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 
@@ -157,23 +194,39 @@ const PopupPanel: React.FC = () => {
                         onClick={handleAudioFeatureToggle}
                         className={`
                             px-4 py-2 rounded-lg transition-all duration-300
-                            ${useAudioFeature 
+                            ${settings.useAudioFeature 
                                 ? 'bg-blue-600 hover:bg-blue-700' 
                                 : 'bg-gray-600 hover:bg-gray-700'
                             }
                         `}
                     >
-                        {useAudioFeature ? t('enabled') : t('disabled')}
+                        {settings.useAudioFeature ? t('enabled') : t('disabled')}
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <span className="text-sm">{t('useWordTooltip')}</span>
+                    <button
+                        onClick={handleWordTooltipToggle}
+                        className={`
+                            px-4 py-2 rounded-lg transition-all duration-300
+                            ${settings.useWordTooltip 
+                                ? 'bg-pink-600 hover:bg-pink-700' 
+                                : 'bg-gray-600 hover:bg-gray-700'
+                            }
+                        `}
+                    >
+                        {settings.useWordTooltip ? t('enabled') : t('disabled')}
                     </button>
                 </div>
 
                 <div className="flex items-center justify-between mt-4">
                     <span className="text-sm">{t('nativeLanguage')}</span>
                     <select 
-                        value={nativeLanguage}
+                        value={settings.nativeLanguage}
                         onChange={e => {
                             const newValue = e.target.value as Language;
-                            setNativeLanguage(newValue);
+                            setSettings({ ...settings, nativeLanguage: newValue });
                             chrome.storage.sync.set({ nativeLanguage: newValue });
                         }}
                         className="px-4 py-2 rounded-lg bg-gray-700 text-white"
@@ -187,10 +240,10 @@ const PopupPanel: React.FC = () => {
                 <div className="flex items-center justify-between mt-4">
                     <span className="text-sm">{t('learningLanguage')}</span>
                     <select 
-                        value={learningLanguage}
+                        value={settings.learningLanguage}
                         onChange={e => {
                             const newValue = e.target.value as Language;
-                            setLearningLanguage(newValue);
+                            setSettings({ ...settings, learningLanguage: newValue });
                             chrome.storage.sync.set({ learningLanguage: newValue });
                         }}
                         className="px-4 py-2 rounded-lg bg-gray-700 text-white"
