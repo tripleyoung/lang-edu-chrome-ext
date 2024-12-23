@@ -25,11 +25,26 @@ export class TranslationService {
             const learningLang = settings.learningLanguage || 'en';
             const targetLang = sourceLang === learningLang ? nativeLang : learningLang;
 
-            const response = await fetch(
-                `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`
+            // 구두점으로 끝나는 문장들과 나머지 부분 분리
+            const parts = text.split(/(?<=[.!?])\s+/);
+            const sentences = parts.filter(part => part.trim().length > 0);
+
+            logger.log('translation', 'Split sentences', { sentences ,text });
+
+            // 각 문장 개별적으로 번역
+            const translations = await Promise.all(
+                sentences.map(async (sentence) => {
+                    const textToTranslate = sentence.trim().replace(/([^.!?])$/, '$1.');
+                    const response = await fetch(
+                        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`
+                    );
+                    const data = await response.json();
+                    return data[0][0][0];
+                })
             );
-            const data = await response.json();
-            return data[0][0][0];
+
+            logger.log('translation', 'Translations', { translations });
+            return translations.join(' ');
         } catch (error) {
             logger.log('translation', 'Translation error', error);
             return text;
