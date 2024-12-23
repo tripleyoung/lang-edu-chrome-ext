@@ -4,51 +4,263 @@ import { TranslationService } from './TranslationService';
 const logger = Logger.getInstance();
 
 export class AudioService {
+    private static instance: AudioService | null = null;
     private isInitialized: boolean = false;
     private hoverTimer: number | null = null;
-    private readonly HOVER_DELAY = 2000; // 2초 딜레이
+    private readonly HOVER_DELAY = 2000;
     private timerUI: HTMLElement | null = null;
-    private isPlaying: boolean = false;  // 재생 상태 추적
-    private currentElement: HTMLElement | null = null;  // 현재 처리 중인 요소
+    private isPlaying: boolean = false;
+    private currentElement: HTMLElement | null = null;
+    private currentUtterance: SpeechSynthesisUtterance | null = null;
 
-    constructor(private translationService: TranslationService) {}
+    private constructor(private translationService: TranslationService) {}
+
+    public static getInstance(translationService: TranslationService): AudioService {
+        if (!AudioService.instance) {
+            AudioService.instance = new AudioService(translationService);
+        }
+        return AudioService.instance;
+    }
 
     public async initialize(): Promise<void> {
         if (this.isInitialized) return;
         
-        // voices가 로드될 때까지 대기
-        if (window.speechSynthesis.getVoices().length === 0) {
-            await new Promise<void>(resolve => {
-                window.speechSynthesis.onvoiceschanged = () => {
-                    window.speechSynthesis.onvoiceschanged = null;
+        try {
+            // voices 초기화를 더 안정적으로 처리
+            await new Promise<void>((resolve) => {
+                const checkVoices = () => {
+                    const voices = window.speechSynthesis.getVoices();
+                    if (voices.length > 0) {
+                        resolve();
+                    } else {
+                        window.speechSynthesis.onvoiceschanged = () => {
+                            window.speechSynthesis.onvoiceschanged = null;
+                            resolve();
+                        };
+                        window.speechSynthesis.getVoices();
+                    }
+                };
+                checkVoices();
+            });
+
+            this.isInitialized = true;
+            logger.log('audio', 'AudioService initialized');
+        } catch (error) {
+            logger.log('audio', 'AudioService initialization failed', error);
+            this.isInitialized = false;
+        }
+    }
+
+    private stopCurrentSpeech(): void {
+        if (this.currentUtterance) {
+            speechSynthesis.cancel();
+            this.currentUtterance = null;
+        }
+    }
+
+    private async ensureVoicesLoaded(): Promise<boolean> {
+        try {
+            // 최대 3초 동안 voices 로딩 시도
+            for (let i = 0; i < 30; i++) {
+                const voices = speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    return true;
+                }
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return false;
+        } catch (error) {
+            logger.log('audio', 'Error loading voices', error);
+            return false;
+        }
+    }
+
+    async playText(text: string, lang: string): Promise<void> {
+        if (!text || text.trim().length === 0) return;
+
+        try {
+            // 현재 재생 중인 음성 중지
+            this.stopCurrentSpeech();
+
+            // voices 로딩 확인
+            const voicesLoaded = await this.ensureVoicesLoaded();
+            if (!voicesLoaded) {
+                throw new Error('Failed to load voices');
+            }
+
+            // 음성 합성 설정
+            const langCode = this.getLangCode(lang);
+            const voices = speechSynthesis.getVoices();
+            const selectedVoice = voices.find(v => 
+                v.name.includes('Google') && 
+                v.lang.startsWith(langCode.split('-')[0])
+            );
+
+            if (!selectedVoice) {
+                throw new Error(`No suitable voice found for ${langCode}`);
+            }
+
+            logger.log('audio', 'Starting speech', {
+                text: text.substring(0, 50),
+                voice: selectedVoice.name,
+                lang: selectedVoice.lang,
+                availableVoices: voices.length
+            });
+
+            // 음성 재생
+            return new Promise<void>((resolve, reject) => {
+                const utterance = new SpeechSynthesisUtterance(text.trim());
+                this.currentUtterance = utterance;
+                
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang;
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                let hasStarted = false;
+
+                utterance.onstart = () => {
+                    hasStarted = true;
+                    logger.log('audio', 'Speech started');
+                };
+
+                utterance.onend = () => {
+                    logger.log('audio', 'Speech completed');
+                    this.currentUtterance = null;
                     resolve();
                 };
+
+                utterance.onerror = (event) => {
+                    logger.log('audio', 'Speech error', {
+                        error: event,
+                        voice: selectedVoice.name,
+                        voiceCount: voices.length,
+                        hasStarted
+                    });
+
+                    // 시작도 못했다면 사용자 상호작용이 필요할 수 있음
+                    if (!hasStarted) {
+                        logger.log('audio', 'Speech failed to start - might need user interaction');
+                        this.showUserInteractionPrompt();
+                    }
+
+                    this.currentUtterance = null;
+                    reject(event);
+                };
+
+                // 음성 재생 시작
+                try {
+                    speechSynthesis.cancel();
+                    speechSynthesis.resume();
+                    speechSynthesis.speak(utterance);
+                } catch (error) {
+                    reject(error);
+                }
             });
+        } catch (error) {
+            logger.log('audio', 'Error in playText', error);
+            this.stopCurrentSpeech();
+            throw error;
         }
+    }
+
+    private showUserInteractionPrompt(): void {
+        const prompt = document.createElement('div');
+        prompt.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 2147483647;
+        `;
+        prompt.textContent = '음성 재생을 위해 페이지를 클릭해주세요';
+        document.body.appendChild(prompt);
         
-        this.isInitialized = true;
+        const removePrompt = () => {
+            prompt.remove();
+            document.removeEventListener('click', removePrompt);
+        };
+        
+        document.addEventListener('click', removePrompt);
+        setTimeout(removePrompt, 5000);
     }
 
     public startHoverTimer(element: HTMLElement, text: string): void {
         // 이미 처리 중인 요소면 무시
         if (this.currentElement === element) return;
 
-        // 이전 타이머 정리
+        // 이전 UI 정리
         this.clearCurrentTimer();
 
         this.currentElement = element;
 
-        // 타이머 UI 생성
+        // 클릭 가능한 타이머 UI 생성
         const rect = element.getBoundingClientRect();
         this.timerUI = this.createTimerUI(rect.left, rect.top);
 
-        this.hoverTimer = window.setTimeout(async () => {
+        // 클릭 이벤트 추가
+        this.timerUI.style.pointerEvents = 'auto';
+        this.timerUI.style.cursor = 'pointer';
+
+        let isOverTimer = false;
+        let isOverElement = false;
+        let hideTimeout: number | null = null;
+
+        const clearHideTimeout = () => {
+            if (hideTimeout) {
+                clearTimeout(hideTimeout);
+                hideTimeout = null;
+            }
+        };
+
+        const startHideTimer = () => {
+            clearHideTimeout();
+            hideTimeout = window.setTimeout(() => {
+                if (!isOverTimer && !isOverElement && this.timerUI) {
+                    this.timerUI.remove();
+                    this.timerUI = null;
+                    this.currentElement = null;
+                }
+            }, 5000);
+        };
+
+        // 타이머 UI에 마우스 진입/이탈 이벤트 추가
+        this.timerUI.addEventListener('mouseenter', () => {
+            isOverTimer = true;
+            clearHideTimeout();
+        });
+
+        this.timerUI.addEventListener('mouseleave', () => {
+            isOverTimer = false;
+            startHideTimer();
+        });
+
+        // 원본 요소에 마우스 진입/이탈 이벤트 추가
+        element.addEventListener('mouseenter', () => {
+            isOverElement = true;
+            clearHideTimeout();
+        });
+
+        element.addEventListener('mouseleave', () => {
+            isOverElement = false;
+            startHideTimer();
+        });
+
+        // 클릭 이벤트 핸들러
+        this.timerUI.addEventListener('click', async () => {
             try {
-                if (this.isPlaying) return;  // 이미 재생 중이면 무시
+                if (this.isPlaying) return;
                 this.isPlaying = true;
 
-                const sourceLang = await this.translationService.detectLanguage(text);
-                const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+                const [sourceLang, settings] = await Promise.all([
+                    this.translationService.detectLanguage(text),
+                    chrome.storage.sync.get(['nativeLanguage', 'learningLanguage'])
+                ]);
+
                 const nativeLang = settings.nativeLanguage || 'ko';
                 const learningLang = settings.learningLanguage || 'en';
 
@@ -60,18 +272,23 @@ export class AudioService {
                     langToUse = learningLang;
                 }
 
+                // UI 숨기기
+                if (this.timerUI) {
+                    this.timerUI.remove();
+                    this.timerUI = null;
+                    this.currentElement = null;
+                }
+
                 await this.playText(textToSpeak, langToUse);
             } catch (error) {
-                logger.log('audio', 'Error playing audio', error);
+                logger.log('audio', 'Error in timer click', error);
             } finally {
                 this.isPlaying = false;
-                this.clearCurrentTimer();
             }
-        }, this.HOVER_DELAY);
+        });
 
-        element.addEventListener('mouseleave', () => {
-            this.clearCurrentTimer();
-        }, { once: true });
+        // 초기 숨김 타이머 시작
+        startHideTimer();
     }
 
     private clearCurrentTimer(): void {
@@ -83,150 +300,12 @@ export class AudioService {
             this.timerUI.remove();
             this.timerUI = null;
         }
-        if (this.isPlaying) {
-            window.speechSynthesis.cancel();
-        }
         this.currentElement = null;
     }
 
     public cleanup(): void {
         this.isInitialized = false;
         document.querySelectorAll('.translation-audio-container').forEach(el => el.remove());
-    }
-
-    async playText(text: string, lang: string): Promise<void> {
-        if (!text || text.trim().length === 0) return;
-
-        try {
-            // 기존 음성 중지 및 초기화
-            speechSynthesis.cancel();
-            await new Promise(resolve => setTimeout(resolve, 500));
-
-            // 언어 설정 가져오기
-            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
-            const nativeLang = settings.nativeLanguage || 'ko';
-            const learningLang = settings.learningLanguage || 'en';
-
-            // 텍스트 언어가 모국어인 경우 학습 언어로 번역
-            let finalText = text;
-            let finalLang = lang;
-            
-            if (lang === nativeLang) {
-                finalText = await this.translationService.translateText(text, learningLang);
-                finalLang = learningLang;
-                logger.log('audio', 'Text translated', {
-                    from: text,
-                    to: finalText,
-                    fromLang: lang,
-                    toLang: finalLang
-                });
-            }
-
-            // 음성 합성 설정
-            const langCode = this.getLangCode(finalLang);
-
-            // voices 초기화 및 대기
-            if (!this.isInitialized) {
-                await this.initialize();
-            }
-
-            // 음성 선택
-            const voices = speechSynthesis.getVoices();
-            const selectedVoice = voices.find(v => 
-                v.name.includes('Google') && 
-                v.lang.startsWith(langCode.split('-')[0])
-            );
-
-            if (!selectedVoice) {
-                logger.log('audio', 'No suitable voice found for', { langCode });
-                return;
-            }
-
-            logger.log('audio', 'Using voice', {
-                name: selectedVoice.name,
-                lang: selectedVoice.lang
-            });
-
-            // 음성 재생
-            return new Promise<void>((resolve) => {
-                const utterance = new SpeechSynthesisUtterance(finalText.trim());
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang;
-                utterance.rate = 0.9;
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
-
-                let started = false;
-                let finished = false;
-                let retryCount = 0;
-                const maxRetries = 2;
-
-                const cleanup = () => {
-                    if (!finished) {
-                        finished = true;
-                        clearInterval(resumeInterval);
-                        resolve();
-                    }
-                };
-
-                const trySpeak = () => {
-                    if (retryCount >= maxRetries) {
-                        logger.log('audio', 'Max retries reached');
-                        cleanup();
-                        return;
-                    }
-
-                    retryCount++;
-                    logger.log('audio', 'Attempting speech', { attempt: retryCount });
-
-                    try {
-                        speechSynthesis.cancel();
-                        speechSynthesis.resume();
-                        speechSynthesis.speak(utterance);
-                    } catch (error) {
-                        logger.log('audio', 'Speak attempt failed', error);
-                        cleanup();
-                    }
-                };
-
-                utterance.onstart = () => {
-                    started = true;
-                    logger.log('audio', 'Speech started');
-                };
-
-                utterance.onend = () => {
-                    if (started) {
-                        logger.log('audio', 'Speech completed');
-                        cleanup();
-                    }
-                };
-
-                utterance.onerror = (event) => {
-                    logger.log('audio', 'Speech error', { attempt: retryCount, error: event });
-                    if (!started && !finished && retryCount < maxRetries) {
-                        setTimeout(trySpeak, 200);
-                    } else {
-                        cleanup();
-                    }
-                };
-
-                // Chrome 버그 해결을 위한 주기적인 resume 호출
-                const resumeInterval = setInterval(() => {
-                    if (!finished && speechSynthesis.speaking) {
-                        speechSynthesis.resume();
-                    }
-                }, 50);
-
-                // 5초 후 강제 종료
-                setTimeout(cleanup, 5000);
-
-                // 첫 시도 시작
-                trySpeak();
-            });
-        } catch (error) {
-            logger.log('audio', 'Error in playText', error);
-            speechSynthesis.cancel();
-        }
     }
 
     private getLangCode(lang: string): string {
@@ -358,15 +437,49 @@ export class AudioService {
                     stroke-linejoin="round"
                 />
             </svg>
+            <div class="audio-tooltip">클릭하여 음성 재생</div>
         `;
         timerUI.style.cssText = `
             position: fixed;
             left: ${x + 10}px;
             top: ${y + 10}px;
             z-index: 2147483647;
-            pointer-events: none;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
         `;
+
+        // 툴팁 스타일
+        const tooltip = timerUI.querySelector('.audio-tooltip');
+        if (tooltip) {
+            (tooltip as HTMLElement).style.cssText = `
+                position: absolute;
+                left: 100%;
+                top: 50%;
+                transform: translateY(-50%);
+                margin-left: 8px;
+                background: rgba(0, 0, 0, 0.8);
+                color: white;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                white-space: nowrap;
+                opacity: 0;
+                transition: opacity 0.2s;
+            `;
+        }
+
+        // 호버 시 툴팁 표시
+        timerUI.addEventListener('mouseenter', () => {
+            if (tooltip) {
+                (tooltip as HTMLElement).style.opacity = '1';
+            }
+        });
+
+        timerUI.addEventListener('mouseleave', () => {
+            if (tooltip) {
+                (tooltip as HTMLElement).style.opacity = '0';
+            }
+        });
+
         document.body.appendChild(timerUI);
         return timerUI;
     }

@@ -40,7 +40,7 @@ export class TranslationExtension {
         // 서비스 초기화 순서 중요
         this.translationService = new TranslationService();
         this.tooltipService = TooltipService.getInstance(this.translationService);
-        this.audioService = new AudioService(this.translationService);
+        this.audioService = AudioService.getInstance(this.translationService);
         this.fullModeService = new FullModeService(this.translationService);
 
         this.initialize();
