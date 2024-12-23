@@ -407,12 +407,13 @@ export class AudioService {
         `;
         timerUI.style.cssText = `
             position: fixed;
-            left: ${x + 10}px;
-            top: ${y + 10}px;
+            left: ${x - 40}px;
+            top: ${y - 10}px;
             z-index: 2147483647;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
             opacity: 0;
             transition: opacity 0.3s;
+            cursor: pointer;
         `;
 
         // 0.3초 후에 나타나게 하고, 3초 동안 표시
