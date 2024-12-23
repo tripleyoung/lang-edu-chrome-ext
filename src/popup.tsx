@@ -78,32 +78,49 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleTooltipToggle = async () => {
-        const newValue = !settings.useTooltip;
-        setSettings({ ...settings, useTooltip: newValue });
-        await chrome.storage.sync.set({ useTooltip: newValue });
+        const newTooltip = !settings.useTooltip;
+        const newSettings = { 
+            ...settings, 
+            useTooltip: newTooltip,
+            useFullMode: newTooltip ? false : settings.useFullMode 
+        };
+        
+        setSettings(newSettings);
+        await chrome.storage.sync.set({ 
+            useTooltip: newTooltip,
+            useFullMode: newSettings.useFullMode 
+        });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
             chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { ...settings, useTooltip: newValue }
+                settings: newSettings
             });
         }
     };
 
     const handleFullModeToggle = async () => {
         try {
-            const newSettings = { ...settings, useFullMode: !settings.useFullMode };
+            const newFullMode = !settings.useFullMode;
+            const newSettings = { 
+                ...settings, 
+                useFullMode: newFullMode,
+                useTooltip: newFullMode ? false : settings.useTooltip 
+            };
+            
             setSettings(newSettings);
-            await chrome.storage.sync.set({ useFullMode: newSettings.useFullMode });
+            await chrome.storage.sync.set({ 
+                useFullMode: newFullMode,
+                useTooltip: newSettings.useTooltip 
+            });
             
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             if (tab?.id) {
-                const response = await chrome.tabs.sendMessage(tab.id, {
+                await chrome.tabs.sendMessage(tab.id, {
                     type: 'UPDATE_SETTINGS',
                     settings: newSettings
                 });
-                logger.log('popup', 'Full mode toggle response', response);
             }
         } catch (error) {
             logger.log('popup', 'Error toggling full mode', error);
