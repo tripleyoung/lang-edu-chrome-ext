@@ -79,36 +79,23 @@ export class AudioService {
         if (!text || text.trim().length === 0) return;
 
         try {
-            // 현재 재생 중인 음성 중지
             this.stopCurrentSpeech();
-
-            // 언어 설정 가져오기
+            
             const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
             const nativeLang = settings.nativeLanguage || 'ko';
             const learningLang = settings.learningLanguage || 'en';
 
-            // 텍스트가 모국어인 경우 학습언어로 번역
             let textToSpeak = text;
             let langToUse = lang;
 
             if (lang === nativeLang) {
-                textToSpeak = await this.translationService.translateText(text, nativeLang);
+                textToSpeak = await this.translationService.translateText(text, learningLang);
                 langToUse = learningLang;
-                logger.log('audio', 'Text translated for speech', {
-                    originalText: text,
-                    translatedText: textToSpeak,
-                    fromLang: lang,
-                    toLang: langToUse
-                });
             }
 
-            // voices 로딩 확인
             const voicesLoaded = await this.ensureVoicesLoaded();
-            if (!voicesLoaded) {
-                throw new Error('Failed to load voices');
-            }
+            if (!voicesLoaded) throw new Error('Failed to load voices');
 
-            // 음성 합성 설정
             const langCode = this.getLangCode(langToUse);
             const voices = speechSynthesis.getVoices();
             const selectedVoice = voices.find(v => 
@@ -116,72 +103,41 @@ export class AudioService {
                 v.lang.startsWith(langCode.split('-')[0])
             );
 
-            if (!selectedVoice) {
-                throw new Error(`No suitable voice found for ${langCode}`);
-            }
+            if (!selectedVoice) throw new Error(`No suitable voice found for ${langCode}`);
 
-            logger.log('audio', 'Starting speech', {
-                originalText: text,
-                textToSpeak,
-                originalLang: lang,
-                speechLang: langToUse,
-                voice: selectedVoice.name,
-                availableVoices: voices.length
-            });
+            // 텍스트를 문장 단위로 분리
+            const sentences = textToSpeak.match(/[^.!?]+[.!?]+/g) || [textToSpeak];
+            
+            // 각 문장을 순차적으로 재생
+            for (const sentence of sentences) {
+                await new Promise<void>((resolve, reject) => {
+                    const utterance = new SpeechSynthesisUtterance(sentence.trim());
+                    this.currentUtterance = utterance;
+                    
+                    utterance.voice = selectedVoice;
+                    utterance.lang = selectedVoice.lang;
+                    utterance.rate = 0.9;
+                    utterance.pitch = 1.0;
+                    utterance.volume = 1.0;
 
-            // 음성 재생
-            return new Promise<void>((resolve, reject) => {
-                const utterance = new SpeechSynthesisUtterance(textToSpeak.trim());
-                this.currentUtterance = utterance;
-                
-                utterance.voice = selectedVoice;
-                utterance.lang = selectedVoice.lang;
-                utterance.rate = 0.9;
-                utterance.pitch = 1.0;
-                utterance.volume = 1.0;
+                    utterance.onend = () => {
+                        this.currentUtterance = null;
+                        resolve();
+                    };
 
-                let hasStarted = false;
+                    utterance.onerror = (event) => {
+                        this.currentUtterance = null;
+                        reject(event);
+                    };
 
-                utterance.onstart = () => {
-                    hasStarted = true;
-                    logger.log('audio', 'Speech started', {
-                        text: textToSpeak.substring(0, 50)
-                    });
-                };
-
-                utterance.onend = () => {
-                    logger.log('audio', 'Speech completed');
-                    this.currentUtterance = null;
-                    resolve();
-                };
-
-                utterance.onerror = (event) => {
-                    logger.log('audio', 'Speech error', {
-                        error: event,
-                        voice: selectedVoice.name,
-                        voiceCount: voices.length,
-                        hasStarted
-                    });
-
-                    // 시작도 못했면 사용자 상호작용이 필요할 수 있음
-                    if (!hasStarted) {
-                        logger.log('audio', 'Speech failed to start - might need user interaction');
-                        this.showUserInteractionPrompt();
-                    }
-
-                    this.currentUtterance = null;
-                    reject(event);
-                };
-
-                // 음성 재생 시작
-                try {
                     speechSynthesis.cancel();
                     speechSynthesis.resume();
                     speechSynthesis.speak(utterance);
-                } catch (error) {
-                    reject(error);
-                }
-            });
+                });
+
+                // 문장 사이에 짧은 간격 추가
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
         } catch (error) {
             logger.log('audio', 'Error in playText', error);
             this.stopCurrentSpeech();
@@ -316,10 +272,37 @@ export class AudioService {
     }
 
     addAudioButton(element: HTMLElement, text: string): void {
+        // 이미 처리된 요소는 건너뛰기
         if (element.querySelector('.translation-audio-button') || 
             element.closest('.translation-audio-container')) {
             return;
         }
+
+        // 전체 모드에서 original 텍스트 사용
+        const inlineContainer = element.closest('.translation-inline-container');
+        if (inlineContainer) {
+            const originalText = inlineContainer.querySelector('.original')?.textContent;
+            if (originalText) {
+                text = originalText;
+            }
+            // 음성 버튼을 original 텍스트 옆에 추가
+            const originalElement = inlineContainer.querySelector('.original');
+            if (originalElement) {
+                this.addAudioButtonToElement(originalElement as HTMLElement, text);
+                return;
+            }
+        }
+
+        // 일반적인 경우
+        this.addAudioButtonToElement(element, text);
+    }
+
+    public addAudioButtonToElement(element: HTMLElement, text: string): void {
+        logger.log('audio', 'Adding audio button to element', {
+            text: text.substring(0, 50),
+            elementClass: element.className,
+            elementContent: element.textContent?.substring(0, 50)
+        });
 
         const container = document.createElement('span');
         container.className = 'translation-audio-container';
@@ -428,7 +411,7 @@ export class AudioService {
             }, 3000);
         }, 300);
 
-        // 마우스가 아이콘 위에 있을 때는 유지
+        // 마우스가 아���콘 위에 있을 때는 유지
         timerUI.addEventListener('mouseenter', () => {
             timerUI.style.opacity = '1';
         });

@@ -124,6 +124,10 @@ export class TranslationExtension {
             if (this.useFullMode !== prevFullMode) {
                 if (this.useFullMode) {
                     await this.fullModeService.applyFullMode();
+                    // 전체 모드 적용 후 음성 기능이 활성화되어 있으면 음성 아이콘 추가
+                    if (this.useAudioFeature) {
+                        setTimeout(() => this.processTextElements(), 1000);
+                    }
                 } else {
                     this.fullModeService.disableFullMode();
                 }
@@ -149,8 +153,31 @@ export class TranslationExtension {
     }
 
     private processTextElements(): void {
-        logger.log('content', 'Starting text elements processing');
+        logger.log('content', 'Starting text elements processing', {
+            useFullMode: this.useFullMode,
+            useAudioFeature: this.useAudioFeature
+        });
         
+        // 전체 모드일 때는 original 텍스트에 직접 음성 아이콘 추가
+        if (this.useFullMode) {
+            const originals = document.querySelectorAll('.translation-inline-container .original');
+            logger.log('content', 'Found original elements in full mode', {
+                count: originals.length
+            });
+
+            originals.forEach(original => {
+                if (original instanceof HTMLElement && original.textContent) {
+                    logger.log('content', 'Adding audio button to original', {
+                        text: original.textContent.substring(0, 50),
+                        hasAudioButton: original.querySelector('.translation-audio-button') !== null
+                    });
+                    this.audioService.addAudioButtonToElement(original, original.textContent);
+                }
+            });
+            return;
+        }
+        
+        // 일반 모드일 때 기존 로직 실행
         const walker = document.createTreeWalker(
             document.body,
             NodeFilter.SHOW_TEXT,
@@ -260,7 +287,7 @@ export class TranslationExtension {
             if (this.hasDirectText(target)) {
                 textElement = target;
             } 
-            // 2. P 태그인 경우 특별 ���리
+            // 2. P 태그인 경우 특별 처리
             else if (target.tagName === 'P') {
                 textElement = target;
             }
