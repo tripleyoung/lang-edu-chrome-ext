@@ -180,6 +180,24 @@ export class TranslationExtension {
     }
 
     private setupEventListeners(): void {
+        // 디바운스된 processTextElements 함수 생성
+        let processTimeout: number | null = null;
+        const debouncedProcessElements = () => {
+            if (processTimeout) {
+                clearTimeout(processTimeout);
+            }
+            processTimeout = window.setTimeout(() => {
+                if (this.useAudioFeature) {
+                    this.processTextElements();
+                }
+            }, 1000);
+        };
+
+        // 초기 실행
+        if (this.useAudioFeature) {
+            this.processTextElements();
+        }
+
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             
@@ -423,7 +441,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접적인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
+    // 직���적인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {

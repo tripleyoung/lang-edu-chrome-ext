@@ -193,12 +193,12 @@ export class AudioService {
         // 이미 처리 중인 요소면 무시
         if (this.currentElement === element) return;
 
-        // 이전 UI 정리
+        // 이전 타이머 정리
         this.clearCurrentTimer();
 
         this.currentElement = element;
 
-        // 클릭 가능한 타이머 UI 생성
+        // 타릭 가능한 타이머 UI 생성
         const rect = element.getBoundingClientRect();
         this.timerUI = this.createTimerUI(rect.left, rect.top);
 
@@ -208,47 +208,32 @@ export class AudioService {
 
         let isOverTimer = false;
         let isOverElement = false;
-        let hideTimeout: number | null = null;
-
-        const clearHideTimeout = () => {
-            if (hideTimeout) {
-                clearTimeout(hideTimeout);
-                hideTimeout = null;
-            }
-        };
-
-        const startHideTimer = () => {
-            clearHideTimeout();
-            hideTimeout = window.setTimeout(() => {
-                if (!isOverTimer && !isOverElement && this.timerUI) {
-                    this.timerUI.remove();
-                    this.timerUI = null;
-                    this.currentElement = null;
-                }
-            }, 5000);
-        };
 
         // 타이머 UI에 마우스 진입/이탈 이벤트 추가
         this.timerUI.addEventListener('mouseenter', () => {
             isOverTimer = true;
-            clearHideTimeout();
         });
 
-        this.timerUI.addEventListener('mouseleave', () => {
-            isOverTimer = false;
-            startHideTimer();
-        });
+        // this.timerUI.addEventListener('mouseleave', () => {
+        //     isOverTimer = false;
+        //     if (!isOverElement) {
+        //         this.clearCurrentTimer();
+        //     }
+        // });
 
         // 원본 요소에 마우스 진입/이탈 이벤트 추가
         element.addEventListener('mouseenter', () => {
             isOverElement = true;
-            clearHideTimeout();
         });
 
-        element.addEventListener('mouseleave', () => {
-            isOverElement = false;
-            startHideTimer();
-        });
+        // element.addEventListener('mouseleave', () => {
+        //     isOverElement = false;
+        //     setTimeout(() => {
+        //         if (!isOverTimer) {
+        //             this.clearCurrentTimer();
+        //         }
+        //     }, 100);
+        // });
 
         // 클릭 이벤트 핸들러
         this.timerUI.addEventListener('click', async () => {
@@ -272,23 +257,19 @@ export class AudioService {
                     langToUse = learningLang;
                 }
 
-                // UI 숨기기
-                if (this.timerUI) {
-                    this.timerUI.remove();
-                    this.timerUI = null;
-                    this.currentElement = null;
-                }
-
                 await this.playText(textToSpeak, langToUse);
             } catch (error) {
                 logger.log('audio', 'Error in timer click', error);
             } finally {
                 this.isPlaying = false;
+                this.clearCurrentTimer();
             }
         });
 
-        // 초기 숨김 타이머 시작
-        startHideTimer();
+        // 호버 타이머 설정
+        this.hoverTimer = window.setTimeout(() => {
+            logger.log('audio', 'Timer completed, waiting for click');
+        }, this.HOVER_DELAY);
     }
 
     private clearCurrentTimer(): void {
@@ -331,7 +312,9 @@ export class AudioService {
             display: inline;
             margin-right: 24px;
         `;
-        container.textContent = text;
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = text;
 
         const button = document.createElement('button');
         button.className = 'translation-audio-button';
@@ -346,17 +329,13 @@ export class AudioService {
             padding: 2px 4px;
             margin-left: 4px;
             font-size: 14px;
-            opacity: 0;
-            transition: opacity 0.2s;
+            opacity: 1;
             z-index: 1000;
             pointer-events: all;
             vertical-align: middle;
             line-height: 1;
         `;
 
-        const textSpan = document.createElement('span');
-        textSpan.textContent = text;
-        container.textContent = '';
         container.appendChild(textSpan);
         container.appendChild(button);
 
@@ -367,9 +346,6 @@ export class AudioService {
     private async addAudioButtonListeners(button: HTMLButtonElement, text: string): Promise<void> {
         const container = button.closest('.translation-audio-container');
         if (!container) return;
-
-        container.addEventListener('mouseenter', () => button.style.opacity = '1');
-        container.addEventListener('mouseleave', () => button.style.opacity = '0');
 
         button.addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -399,7 +375,6 @@ export class AudioService {
         timerUI.className = 'audio-timer';
         timerUI.innerHTML = `
             <svg width="32" height="32" viewBox="0 0 32 32">
-                <!-- 배경 원 -->
                 <circle
                     cx="16"
                     cy="16"
@@ -407,27 +382,6 @@ export class AudioService {
                     fill="rgba(0, 0, 0, 0.7)"
                     stroke="none"
                 />
-                <!-- 프로그레스 원 -->
-                <circle
-                    cx="16"
-                    cy="16"
-                    r="14"
-                    fill="none"
-                    stroke="#4a9eff"
-                    stroke-width="2"
-                    stroke-dasharray="87.96459430051421"
-                    stroke-dashoffset="87.96459430051421"
-                    transform="rotate(-90 16 16)"
-                >
-                    <animate
-                        attributeName="stroke-dashoffset"
-                        from="87.96459430051421"
-                        to="0"
-                        dur="2s"
-                        fill="freeze"
-                    />
-                </circle>
-                <!-- 음성 아이콘 -->
                 <path
                     d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
                     fill="none"
@@ -445,7 +399,29 @@ export class AudioService {
             top: ${y + 10}px;
             z-index: 2147483647;
             filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+            opacity: 0;
+            transition: opacity 0.3s;
         `;
+
+        // 0.3초 후에 나타나게 하고, 3초 동안 표시
+        setTimeout(() => {
+            timerUI.style.opacity = '1';
+            
+            // 3초 후에 천천히 사라지기
+            setTimeout(() => {
+                timerUI.style.opacity = '0';
+                setTimeout(() => {
+                    if (timerUI.parentElement) {
+                        timerUI.remove();
+                    }
+                }, 300);
+            }, 3000);
+        }, 300);
+
+        // 마우스가 아이콘 위에 있을 때는 유지
+        timerUI.addEventListener('mouseenter', () => {
+            timerUI.style.opacity = '1';
+        });
 
         // 툴팁 스타일
         const tooltip = timerUI.querySelector('.audio-tooltip');
