@@ -39,7 +39,7 @@ export class TranslationExtension {
 
         // 서비스 초기화 순서 중요
         this.translationService = new TranslationService();
-        this.tooltipService = new TooltipService(this.translationService);
+        this.tooltipService = TooltipService.getInstance(this.translationService);
         this.audioService = new AudioService(this.translationService);
         this.fullModeService = new FullModeService(this.translationService);
 
@@ -180,7 +180,7 @@ export class TranslationExtension {
     }
 
     private setupEventListeners(): void {
-        const handleMouseOver = (e: MouseEvent) => {
+        const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             
             // 이미 처리된 요소는 건너뛰기
@@ -190,7 +190,22 @@ export class TranslationExtension {
                 return;
             }
 
-            const textElement = this.findClosestTextElement(target);
+            // 텍스트 요소 찾기 (수정된 부분)
+            let textElement: HTMLElement | null = null;
+            
+            // 1. 직접 텍스트를 가진 요소인 경우
+            if (this.hasDirectText(target)) {
+                textElement = target;
+            } 
+            // 2. P 태그인 경우 특별 처리
+            else if (target.tagName === 'P') {
+                textElement = target;
+            }
+            // 3. 그 외의 경우 가장 가까운 텍스트 요소 찾기
+            else {
+                textElement = this.findClosestTextElement(target);
+            }
+
             if (!textElement) return;
 
             // 디바운스 처리
@@ -200,37 +215,39 @@ export class TranslationExtension {
 
             this.debounceTimer = window.setTimeout(async () => {
                 try {
-                    const text = this.getElementText(textElement);
+                    const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
 
                     // 단어 툴팁 모드
                     if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
-                        await this.showWordTooltip(textElement, text.trim());
+                        await this.showWordTooltip(textElement!, text.trim());
                         return;
                     }
 
                     // 일반 툴팁 모드
                     if (this.useTooltip) {
-                        await this.tooltipService.showTooltip(textElement, text);
+                        await this.tooltipService.showTooltip(textElement!, text);
                     }
 
                     // 패널 처리
                     if (this.usePanel || this.autoOpenPanel) {
                         await this.sendTranslationToPanel(text);
                     }
-
                 } catch (error) {
                     logger.log('content', 'Error in mouseenter handler', error);
                 }
             }, this.debounceTime);
         };
 
-        // 이벤트 리스너 등록
-        document.body.addEventListener('mouseover', handleMouseOver, { passive: true });
+        // 이벤트 리스너 등록 (캡처링 페이즈 사용)
+        document.body.addEventListener('mouseover', handleMouseOver, { 
+            passive: true,
+            capture: true
+        });
 
         // 클린업 핸들러
         this.cleanupHandlers.add(() => {
-            document.body.removeEventListener('mouseover', handleMouseOver);
+            document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
         });
     }
 
@@ -368,33 +385,112 @@ export class TranslationExtension {
         }
     }
 
-    private getElementText(element: HTMLElement): string {
-        let text = '';
-        Array.from(element.childNodes).forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-                const nodeText = node.textContent?.trim();
-                if (nodeText) text += nodeText + ' ';
-            }
-        });
-        return text.trim();
-    }
-
     private findClosestTextElement(element: HTMLElement): HTMLElement | null {
         const excludeTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'IFRAME', 'INPUT', 'SELECT', 'TEXTAREA'];
         
+        // BR 태그가 있는 경우 부모 요소를 반환
+        if (element.querySelector('br') || element.tagName === 'BR') {
+            const parent = element.parentElement;
+            if (parent && !excludeTags.includes(parent.tagName)) {
+                return parent;
+            }
+        }
+
+        // 현재 요소가 직접 텍스트를 포함하고 있는지 확인
+        if (this.hasDirectText(element) && !excludeTags.includes(element.tagName)) {
+            return element;
+        }
+
+        // 부모 요소들을 순회하면서 텍스트를 포함한 가장 가까운 요소 찾기
         let current: HTMLElement | null = element;
         while (current) {
             if (excludeTags.includes(current.tagName)) return null;
             if (current.classList?.contains('translation-tooltip')) return null;
             if (current.classList?.contains('translation-container')) return null;
-            
-            const text = this.getElementText(current);
-            if (text && text.length > 0) return current;
-            
+
+            if (this.hasDirectText(current)) {
+                return current;
+            }
+
             current = current.parentElement;
         }
         
         return null;
+    }
+
+    // 직접적인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
+    private hasDirectText(element: HTMLElement): boolean {
+        let hasText = false;
+        for (const node of Array.from(element.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const text = node.textContent?.trim();
+                if (text && text.length > 0) {
+                    hasText = true;
+                    break;
+                }
+            }
+        }
+        return hasText;
+    }
+
+    private getElementText(element: HTMLElement, mouseEvent?: MouseEvent): string {
+        // BR 태그가 있는 경우 현재 마우스가 위치한 텍스트 블록만 반환
+        if (element.querySelector('br') || element.tagName === 'BR') {
+            const textBlocks: string[] = [];
+            let currentBlock = '';
+
+            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 분리
+            element.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent?.trim();
+                    if (text) {
+                        currentBlock += text + ' ';
+                    }
+                } else if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === 'BR') {
+                    if (currentBlock) {
+                        textBlocks.push(currentBlock.trim());
+                        currentBlock = '';
+                    }
+                }
+            });
+
+            // 마지막 블록 처리
+            if (currentBlock) {
+                textBlocks.push(currentBlock.trim());
+            }
+
+            // 마우스 위치에 있는 텍스트 블록 찾기
+            for (const block of textBlocks) {
+                const range = document.createRange();
+                const selection = window.getSelection();
+                const textNode = Array.from(element.childNodes).find(
+                    node => node.nodeType === Node.TEXT_NODE && node.textContent?.includes(block)
+                );
+
+                if (textNode) {
+                    range.selectNodeContents(textNode);
+                    const rect = range.getBoundingClientRect();
+                    if (mouseEvent && rect.top <= mouseEvent.clientY && mouseEvent.clientY <= rect.bottom) {
+                        return block;
+                    }
+                }
+            }
+
+            // 기본값으로 첫 번째 블록 반환
+            return textBlocks[0] || '';
+        }
+
+        // 일반적인 텍스트 처리
+        let text = '';
+        for (const node of Array.from(element.childNodes)) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                const nodeText = node.textContent?.trim();
+                if (nodeText) {
+                    text += nodeText + ' ';
+                }
+            }
+        }
+        return text.trim();
     }
 
     public async applyFullMode(): Promise<void> {
