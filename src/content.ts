@@ -71,6 +71,23 @@ export class TranslationExtension {
             this.useWordTooltip = settings.useWordTooltip ?? false;
             this.autoOpenPanel = settings.autoOpenPanel ?? false;
 
+            // BR 태그 주변의 텍스트를 span으로 감싸기
+            document.querySelectorAll('br').forEach(br => {
+                const parent = br.parentElement;
+                if (!parent) return;
+
+                Array.from(parent.childNodes).forEach(node => {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const text = node.textContent?.trim();
+                        if (text && text.length > 1) {
+                            const span = document.createElement('span');
+                            span.textContent = text;
+                            node.parentNode?.replaceChild(span, node);
+                        }
+                    }
+                });
+            });
+
             // 이벤트 리스너 설정
             this.setupEventListeners();
 
@@ -507,7 +524,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메��드
+    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {

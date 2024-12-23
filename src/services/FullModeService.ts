@@ -11,27 +11,24 @@ export class FullModeService {
 
     constructor(private translationService: TranslationService) {}
 
-    async applyFullMode(): Promise<void> {
+    public async applyFullMode(): Promise<void> {
         try {
-            if (this.isTranslating) {
-                logger.log('fullMode', 'Translation already in progress');
-                return;
-            }
-
             this.isTranslating = true;
             logger.log('fullMode', 'Starting full mode translation');
             
-            this.cleanup();
-            
-            this.setupPageObserver();
-            
+            // 기존 번역 제거
+            this.removeExistingTranslations();
+
+            // 일반 텍스트 노드 처리
             await this.translateAllTextNodes();
             
+            // 페이지 변경 감지 설정
+            this.setupPageObserver();
             this.startPeriodicCheck();
-            
-            logger.log('fullMode', 'Full mode translation completed');
+
+            logger.log('fullMode', 'Full mode applied successfully');
         } catch (error) {
-            logger.log('fullMode', 'Error in full translation mode', error);
+            logger.log('fullMode', 'Error applying full mode', error);
             throw error;
         }
     }
@@ -227,39 +224,6 @@ export class FullModeService {
     }
 
     private async translateAllTextNodes(): Promise<void> {
-        // BR 태그 주변의 텍스트를 먼저 처리
-        const brElements = document.getElementsByTagName('br');
-        for (let i = 0; i < brElements.length; i++) {
-            const br = brElements[i];
-            
-            // 이전 텍스트 노드 처리
-            if (br.previousSibling?.nodeType === Node.TEXT_NODE) {
-                const textNode = br.previousSibling as Text;
-                if (!this.shouldSkipTextNode(textNode)) {
-                    const text = textNode.textContent?.trim();
-                    if (text && text.length > 1) {
-                        const span = document.createElement('span');
-                        span.textContent = text;
-                        textNode.parentNode?.replaceChild(span, textNode);
-                    }
-                }
-            }
-
-            // 다음 텍스트 노드 처리
-            if (br.nextSibling?.nodeType === Node.TEXT_NODE) {
-                const textNode = br.nextSibling as Text;
-                if (!this.shouldSkipTextNode(textNode)) {
-                    const text = textNode.textContent?.trim();
-                    if (text && text.length > 1) {
-                        const span = document.createElement('span');
-                        span.textContent = text;
-                        textNode.parentNode?.replaceChild(span, textNode);
-                    }
-                }
-            }
-        }
-
-        // 일반 텍스트 노드 처리
         const walker = document.createTreeWalker(
             document.body,
             NodeFilter.SHOW_TEXT,
@@ -309,7 +273,7 @@ export class FullModeService {
             return NodeFilter.FILTER_REJECT;
         }
 
-        // 무할 태그들
+        // 무시할 태그들
         const ignoredTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'TEXTAREA', 'INPUT'];
         if (ignoredTags.includes(parent.tagName) ||
             getComputedStyle(parent).display === 'none' || 
@@ -403,32 +367,8 @@ export class FullModeService {
         const parent = node.parentElement;
         if (!parent) return true;
 
-        // 1. 이미 번역된 요소나 툴팁 체크
-        if (parent.closest('.translation-inline-container') ||
-            parent.closest('.word-tooltip') ||
-            parent.closest('.word-tooltip-permanent') ||
-            parent.closest('.word-highlight-full') ||
-            parent.closest('.tooltip-content') ||
-            parent.closest('form')) {  // form 전를 제외
-            return true;
-        }
-
-        // 2. form 관련 요소와 무시할 태그들 체크
-        const ignoredTags = [
-            'SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE',
-            'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON',
-            'FIELDSET', 'LEGEND'
-        ];
-
-        let currentElement: HTMLElement | null = parent;
-        while (currentElement) {
-            if (ignoredTags.includes(currentElement.tagName)) {
-                return true;
-            }
-            currentElement = currentElement.parentElement;
-        }
-
         return this.shouldSkipElement(parent) || 
+               parent.closest('.translation-inline-container') !== null ||
                parent.querySelector('.translation-inline-container') !== null;
     }
 
@@ -448,49 +388,22 @@ export class FullModeService {
         const scanAndTranslate = () => {
             if (!this.isTranslating) return;
 
-            // BR 태그 주변의 텍스트를 span으로 감싸서 처리
-            const brElements = document.getElementsByTagName('br');
-            for (let i = 0; i < brElements.length; i++) {
-                const br = brElements[i];
-                
-                // 이전 텍스트 노드 처리
-                if (br.previousSibling?.nodeType === Node.TEXT_NODE) {
-                    const textNode = br.previousSibling as Text;
-                    if (!this.shouldSkipTextNode(textNode)) {  // 필터링 추가
-                        const text = textNode.textContent?.trim();
-                        if (text && text.length > 1) {
-                            const span = document.createElement('span');
-                            span.textContent = text;
-                            textNode.parentNode?.replaceChild(span, textNode);
-                            this.processTextElement(span);
-                        }
-                    }
-                }
-
-                // 다음 텍스트 노드 처리
-                if (br.nextSibling?.nodeType === Node.TEXT_NODE) {
-                    const textNode = br.nextSibling as Text;
-                    if (!this.shouldSkipTextNode(textNode)) {  // 필터링 추가
-                        const text = textNode.textContent?.trim();
-                        if (text && text.length > 1) {
-                            const span = document.createElement('span');
-                            span.textContent = text;
-                            textNode.parentNode?.replaceChild(span, textNode);
-                            this.processTextElement(span);
-                        }
-                    }
-                }
-            }
-
             // 나머지 일반 텍스트 노드 처리
             const walker = document.createTreeWalker(
                 document.body,
                 NodeFilter.SHOW_TEXT,
                 {
                     acceptNode: (node) => {
-                        if (this.shouldSkipTextNode(node as Text)) {  // shouldSkipTextNode 사용
+                        const text = node.textContent?.trim();
+                        if (!text || text.length <= 1) return NodeFilter.FILTER_REJECT;
+
+                        const parent = node.parentElement;
+                        if (!parent || 
+                            parent.closest('.translation-inline-container') ||
+                            ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) {
                             return NodeFilter.FILTER_REJECT;
                         }
+
                         return NodeFilter.FILTER_ACCEPT;
                     }
                 }
