@@ -252,24 +252,6 @@ export class TranslationExtension {
     }
 
     private setupEventListeners(): void {
-        // 디바운스된 processTextElements 함수 생성
-        let processTimeout: number | null = null;
-        const debouncedProcessElements = () => {
-            if (processTimeout) {
-                clearTimeout(processTimeout);
-            }
-            processTimeout = window.setTimeout(() => {
-                if (this.useAudioFeature) {
-                    this.processTextElements();
-                }
-            }, 1000);
-        };
-
-        // 초기 실행
-        if (this.useAudioFeature) {
-            this.processTextElements();
-        }
-
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             
@@ -280,20 +262,46 @@ export class TranslationExtension {
                 return;
             }
 
-            // 텍스트 요소 찾기 (수정된 부분)
+            // 텍스트 요소 찾기
             let textElement: HTMLElement | null = null;
             
-            // 1. 직접 텍스트를 가진 요소인 경우
-            if (this.hasDirectText(target)) {
-                textElement = target;
-            } 
-            // 2. P 태그인 경우 특별 처리
-            else if (target.tagName === 'P') {
-                textElement = target;
-            }
-            // 3. 그 외의 경우 가장 가까운 텍스트 요소 찾기
-            else {
-                textElement = this.findClosestTextElement(target);
+            // BR 태그가 있는 경우 텍스트를 span으로 분리
+            if (target.querySelector('br') || target.tagName === 'BR') {
+                const textBlocks: string[] = [];
+                let currentBlock = '';
+                let currentNode: Node | null = null;
+
+                // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 분리
+                target.childNodes.forEach(node => {
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const text = node.textContent?.trim();
+                        if (text) {
+                            currentBlock = text;
+                            currentNode = node;
+                            
+                            // 텍스트 노드를 span으로 교체
+                            const span = document.createElement('span');
+                            span.textContent = currentBlock;
+                            if (currentNode.parentNode) {
+                                currentNode.parentNode.replaceChild(span, currentNode);
+                                textElement = span;
+                            }
+                        }
+                    }
+                });
+
+                if (!textElement) {
+                    textElement = target;
+                }
+            } else {
+                // 일반적인 텍스트 요소 찾기
+                if (this.hasDirectText(target)) {
+                    textElement = target;
+                } else if (target.tagName === 'P') {
+                    textElement = target;
+                } else {
+                    textElement = this.findClosestTextElement(target);
+                }
             }
 
             if (!textElement) return;
@@ -324,10 +332,10 @@ export class TranslationExtension {
                         await this.tooltipService.showTooltip(textElement!, text);
                     }
 
-                    // 패널 리
-                    // if (this.usePanel || this.autoOpenPanel) {
-                    //     await this.sendTranslationToPanel(text);
-                    // }
+                    // 패널 처리
+                    if (this.usePanel || this.autoOpenPanel) {
+                        await this.sendTranslationToPanel(text);
+                    }
                 } catch (error) {
                     logger.log('content', 'Error in mouseenter handler', error);
                 }
@@ -529,15 +537,58 @@ export class TranslationExtension {
     }
 
     private getElementText(element: HTMLElement, mouseEvent?: MouseEvent): string {
-        logger.log('content', 'Getting element text input', { 
-            element: element.tagName,
-            fullText: element.textContent,
-            mouseEvent: !!mouseEvent
-        });
+        // BR 태그가 있는 경우 현재 마우스가 위치한 텍스트 블록만 반환
+        if (element.querySelector('br') || element.tagName === 'BR') {
+            const textBlocks: string[] = [];
+            let currentBlock = '';
 
-        // 전체 텍스트 내용 가져오기
-        const fullText = element.textContent || '';
-        return fullText.trim();
+            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 분리
+            element.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const text = node.textContent?.trim();
+                    if (text) {
+                        currentBlock += text + ' ';
+                    }
+                } else if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === 'BR') {
+                    if (currentBlock) {
+                        textBlocks.push(currentBlock.trim());
+                        currentBlock = '';
+                    }
+                }
+            });
+
+            if (currentBlock) {
+                textBlocks.push(currentBlock.trim());
+            }
+
+            // 마우스 위치에 있는 텍스트 블록 찾기
+            if (mouseEvent) {
+                for (const block of textBlocks) {
+                    const range = document.createRange();
+                    const textNode = Array.from(element.childNodes).find(
+                        node => node.nodeType === Node.TEXT_NODE && node.textContent?.includes(block)
+                    );
+
+                    if (textNode) {
+                        range.selectNodeContents(textNode);
+                        const rect = range.getBoundingClientRect();
+                        if (rect.top <= mouseEvent.clientY && mouseEvent.clientY <= rect.bottom) {
+                            return block;
+                        }
+                    }
+                }
+            }
+
+            // 모든 블록을 하나의 문자열로 합침
+            return textBlocks.join(' ');
+        }
+
+        // 일반적인 텍스트 처리 - 모든 텍스트 노드의 내용을 합침
+        return Array.from(element.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent?.trim())
+            .filter(text => text && text.length > 0)
+            .join(' ');
     }
 
     public async applyFullMode(): Promise<void> {
