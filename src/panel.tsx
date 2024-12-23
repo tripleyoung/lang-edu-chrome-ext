@@ -28,15 +28,99 @@ interface TranslationData {
     idioms: any[];
 }
 
+interface WordInfo {
+    word: string;
+    phonetic: string;
+    audioUrl: string;
+    meanings: {
+        partOfSpeech: string;
+        definitions: {
+            definition: string;
+            example?: string;
+        }[];
+        examples: string[];
+    }[];
+}
+
+const WordAnalysis: React.FC<{ wordInfo: WordInfo }> = ({ wordInfo }) => {
+    const playAudio = () => {
+        if (wordInfo.audioUrl) {
+            new Audio(wordInfo.audioUrl).play();
+        }
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 rounded-lg mb-4">
+            <div className="flex items-center gap-3 mb-4">
+                <h3 className="text-xl font-bold">{wordInfo.word}</h3>
+                {wordInfo.phonetic && (
+                    <span className="text-gray-400">{wordInfo.phonetic}</span>
+                )}
+                {wordInfo.audioUrl && (
+                    <button 
+                        onClick={playAudio}
+                        className="text-blue-400 hover:text-blue-300"
+                    >
+                        🔊
+                    </button>
+                )}
+            </div>
+            
+            <div className="space-y-4">
+                {wordInfo.meanings.map((meaning, idx) => (
+                    <div key={idx} className="border-t border-gray-700 pt-3">
+                        <div className="text-yellow-500 italic mb-2">
+                            {meaning.partOfSpeech}
+                        </div>
+                        <ul className="space-y-2">
+                            {meaning.definitions.map((def, defIdx) => (
+                                <li key={defIdx}>
+                                    <div className="text-white">
+                                        {def.definition}
+                                    </div>
+                                    {def.example && (
+                                        <div className="text-gray-400 text-sm mt-1">
+                                            예: {def.example}
+                                        </div>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const TranslationPanel: React.FC = () => {
     const [translationData, setTranslationData] = useState<TranslationData | null>(null);
+    const [wordInfo, setWordInfo] = useState<WordInfo | null>(null);
 
     useEffect(() => {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-            if (message.type === 'TRANSLATION_RESULT') {
+            logger.log('panel', 'Received message in panel', { 
+                type: message.type, 
+                data: message.data,
+                sender 
+            });
+
+            if (message.type === 'UPDATE_TRANSLATION') {
                 setTranslationData(message.data);
                 sendResponse({ success: true });
             }
+
+            if (message.type === 'SEND_WORD_INFO') {
+                logger.log('panel', 'Processing word info', {
+                    word: message.data.word,
+                    meanings: message.data.meanings?.length || 0,
+                    hasPhonetic: !!message.data.phonetic,
+                    hasAudio: !!message.data.audioUrl
+                });
+                setWordInfo(message.data);
+                sendResponse({ success: true });
+            }
+
             return true;
         });
     }, []);
@@ -122,6 +206,8 @@ const TranslationPanel: React.FC = () => {
                     </div>
                 </div>
             )}
+
+            {wordInfo && <WordAnalysis wordInfo={wordInfo} />}
         </div>
     );
 };

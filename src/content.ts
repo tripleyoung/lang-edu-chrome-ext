@@ -52,6 +52,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
 });
 
+interface WordPhonetic {
+    text?: string;
+    audio?: string;
+}
+
+interface WordMeaning {
+    partOfSpeech: string;
+    definitions: Array<{
+        definition: string;
+        example?: string;
+    }>;
+}
+
 class TranslationExtension {
     private static instance: TranslationExtension | null = null;
     public static panelWindow: chrome.windows.Window | null = null;
@@ -74,6 +87,7 @@ class TranslationExtension {
     private dictionaryCache: Map<string, any> = new Map();      // 사전 캐시
     private debounceTime: number = 300;  // 디바운스 시간 증가
     public autoOpenPanel: boolean = false;  // 자동 오픈 모드 추가
+    public useWordTooltip: boolean = false;  // 단어 툴팁 모드 추가
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -84,11 +98,12 @@ class TranslationExtension {
         this.initialize();
         
         // 저장된 설정 불러오기
-        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'autoOpenPanel'], (result) => {
+        chrome.storage.sync.get(['usePanel', 'useTooltip', 'useFullMode', 'autoOpenPanel', 'useWordTooltip'], (result) => {
             this.usePanel = result.usePanel ?? true;
             this.useTooltip = result.useTooltip ?? false;
             this.useFullMode = result.useFullMode ?? false;
             this.autoOpenPanel = result.autoOpenPanel ?? false;
+            this.useWordTooltip = result.useWordTooltip ?? false;
             
             // 전체 모드가 활성화되어 있으면 즉시 적용
             if (this.useFullMode) {
@@ -147,7 +162,7 @@ class TranslationExtension {
                 return;
             }
 
-            // 텍스트 요소들을 찾아서 음성 버튼 추가 (이미 버튼이 있는 경우 건너뛰기)
+            // 텍스트 요소들을 아서 음성 버튼 추가 (이미 버튼이 있는 경우 건너뛰기)
             const textElements = document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th');
             textElements.forEach(element => {
                 if (!element.querySelector('.translation-audio-button')) {  // 이미 버튼이 있으면 건너뛰기
@@ -173,7 +188,7 @@ class TranslationExtension {
             const nativeLang = settings.nativeLanguage || 'ko';
             const learningLang = settings.learningLanguage || 'en';
 
-            // 번역된 텍스트를 미리 가져와서 캐시에 저장
+            // 번역된 텍스트를 미리 가져와 캐시에 저장
             let translatedText = '';
             if (sourceLang === nativeLang) {
                 translatedText = await this.translateText(text, learningLang);
@@ -309,7 +324,7 @@ class TranslationExtension {
             if (TranslationExtension.panelWindow?.id) {
                 try {
                     await chrome.windows.get(TranslationExtension.panelWindow.id);
-                    return; // 패널이 존재하면 리턴
+                    return; // 패널이 존재하�� 리턴
                 } catch {
                     // 패널이 존재하지 않으면 계속 진행
                 }
@@ -539,52 +554,111 @@ class TranslationExtension {
     }
 
     public async applyFullMode(): Promise<void> {
-        const textElements = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th'))
-            .filter(el => {
-                const text = el.textContent?.trim();
-                return text && text.length > 0 && getComputedStyle(el).display !== 'none';
-            });
+        try {
+            // TreeWalker를 사용하여 모든 텍스트 노드를 찾음
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: (node) => {
+                        // 스크립트, 스타일, 숨겨진 요소 등은 제외
+                        const parent = node.parentElement;
+                        if (!parent || 
+                            parent.tagName === 'SCRIPT' || 
+                            parent.tagName === 'STYLE' || 
+                            parent.tagName === 'NOSCRIPT' ||
+                            parent.classList.contains('translation-container') ||
+                            getComputedStyle(parent).display === 'none' || 
+                            getComputedStyle(parent).visibility === 'hidden') {
+                            return NodeFilter.FILTER_REJECT;
+                        }
 
-        for (const element of textElements) {
-            const originalText = element.textContent?.trim() || '';
-            if (originalText.length < 2) continue;
-
-            try {
-                const sourceLang = await this.detectLanguage(originalText);
-                const translation = await this.translateText(originalText, sourceLang);
-                
-                if (originalText.toLowerCase() === translation.toLowerCase()) {
-                    continue;
+                        // 의미 있는 텍스트만 선택
+                        const text = node.textContent?.trim();
+                        return text && text.length > 1 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                    }
                 }
-                
-                const container = document.createElement('div');
-                container.className = 'translation-full-mode';
-                container.style.cssText = `
-                    display: flex;
-                    flex-direction: column;
-                    gap: 0.5rem;
-                    margin: ${getComputedStyle(element).margin};
-                `;
+            );
 
-                // 원본 요소의 스일 복사
-                const originalElement = element.cloneNode(true) as HTMLElement;
-                
-                // 번역 요소 생성
-                const translationElement = document.createElement('div');
-                translationElement.textContent = translation;
-                translationElement.style.cssText = `
-                    color: #ff6b00;
-                    font-style: italic;
-                    font-size: 0.9em;
-                `;
+            let node;
+            const translationPromises: Promise<void>[] = [];
 
-                container.appendChild(originalElement);
-                container.appendChild(translationElement);
-                element.replaceWith(container);
-            } catch (error) {
-                logger.log('content', 'Translation failed for element', error);
+            while (node = walker.nextNode()) {
+                const textNode = node as Text;
+                const originalText = textNode.textContent?.trim() || '';
+
+                // 각 텍스트 노드에 대한 번역 작업을 Promise 배열에 추가
+                translationPromises.push(
+                    (async () => {
+                        try {
+                            const sourceLang = await this.detectLanguage(originalText);
+                            const translation = await this.translateText(originalText, sourceLang);
+
+                            // 원문과 번역이 같으면 건너뛰기
+                            if (originalText.toLowerCase() === translation.toLowerCase()) {
+                                return;
+                            }
+
+                            // 번역된 텍스트를 표시할 컨테이너 생성
+                            const container = document.createElement('span');
+                            container.className = 'translation-inline-container';
+                            container.style.cssText = `
+                                position: relative;
+                                display: inline;
+                            `;
+
+                            // 원본 텍스트 span
+                            const originalSpan = document.createElement('span');
+                            originalSpan.textContent = originalText;
+                            originalSpan.className = 'translation-original';
+
+                            // 번역 텍스트 span
+                            const translationSpan = document.createElement('span');
+                            translationSpan.textContent = translation;
+                            translationSpan.className = 'translation-text';
+                            translationSpan.style.cssText = `
+                                display: block;
+                                color: #2196F3;
+                                font-size: 0.9em;
+                                margin-top: 2px;
+                                font-style: italic;
+                            `;
+
+                            container.appendChild(originalSpan);
+                            container.appendChild(translationSpan);
+
+                            // 원본 텍스트 노드를 새로운 컨테이너로 교체
+                            textNode.parentNode?.replaceChild(container, textNode);
+
+                        } catch (error) {
+                            logger.log('content', 'Translation failed for text node', {
+                                text: originalText,
+                                error
+                            });
+                        }
+                    })()
+                );
             }
+
+            // 모든 번역 작업이 완료될 때까지 대기
+            await Promise.all(translationPromises);
+            logger.log('content', 'Full translation mode completed');
+
+        } catch (error) {
+            logger.log('content', 'Error in full translation mode', error);
         }
+    }
+
+    // 전체 번역 모드 해제 메서드 추가
+    public disableFullMode(): void {
+        // translation-inline-container 클래스를 가진 모든 요소를 찾아서
+        // 원본 텍스트로 복원
+        document.querySelectorAll('.translation-inline-container').forEach(container => {
+            const originalText = container.querySelector('.translation-original')?.textContent || '';
+            const textNode = document.createTextNode(originalText);
+            container.parentNode?.replaceChild(textNode, container);
+        });
+        logger.log('content', 'Full translation mode disabled');
     }
 
     private async analyzeWords(text: string): Promise<TranslationResponse['words']> {
@@ -686,11 +760,11 @@ class TranslationExtension {
         }
     }
 
-    // 이벤트 위임 핸러
+    // 이벤트 위임 핸더
     private handleMouseOver = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
         
-        // 텍스트 노드를 포함한 가장 가까운 유효한 요소 찾기
+        // 텍스트 노드를 포함 가장 가까운 유효한 요소 찾기
         const textElement = this.findClosestTextElement(target);
         if (!textElement) return;
 
@@ -726,6 +800,18 @@ class TranslationExtension {
 
         this.debounceTimer = window.setTimeout(async () => {
             try {
+                // 단어 툴팁 모드인 경우
+                if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
+                    await this.showWordTooltip(element, text.trim());
+                    return;
+                }
+
+                // 패널이 없으면 먼저 생성
+                if (!TranslationExtension.panelWindow?.id) {
+                    await this.createTranslationBar();
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
                 let translation = this.translationCache.get(text);
                 if (!translation) {
                     const sourceLang = await this.detectLanguage(text);
@@ -740,18 +826,16 @@ class TranslationExtension {
                     this.translationCache.set(text, translation);
                 }
 
-                // 툴팁 표시 (번역된 텍스트)
                 if (this.useTooltip) {
                     this.showTooltip(element, text, translation);
                 }
 
-                // 음성 버튼 추가 (설정이 활성화된 경우)
                 if (this.useAudioFeature) {
                     this.addAudioButton(element, text);
                 }
                 
                 if (this.usePanel || this.autoOpenPanel) {
-                    await this.showTranslationPanel(text);
+                    await this.sendTranslationToPanel(text);
                 }
             } catch (error) {
                 logger.log('content', 'Error in mouseenter handler', error);
@@ -786,6 +870,62 @@ class TranslationExtension {
             return data[2] || 'en';
         } catch (error) {
             return 'en';
+        }
+    }
+
+    private async showWordTooltip(element: HTMLElement, word: string): Promise<void> {
+        try {
+            logger.log('content', 'Attempting to show word tooltip', { word });
+
+            // 패널이 없으면 먼저 생성
+            if (!TranslationExtension.panelWindow?.id) {
+                await this.createTranslationBar();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // 캐시된 단어 정보 확인
+            let wordInfo = this.dictionaryCache.get(word.toLowerCase());
+            
+            if (!wordInfo) {
+                logger.log('content', 'Fetching word info from API', { word });
+                // 사전 API 호출
+                const response = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${word.toLowerCase()}`);
+                if (!response.ok) {
+                    logger.log('content', 'API request failed', { word, status: response.status });
+                    return;
+                }
+                
+                const data = await response.json();
+                if (!data.length) return;
+                
+                wordInfo = data[0];
+                this.dictionaryCache.set(word.toLowerCase(), wordInfo);
+            }
+
+            // 패널로 단어 정보 전송
+            if (TranslationExtension.panelWindow?.id) {
+                const wordData = {
+                    word: word,
+                    phonetic: wordInfo.phonetics.find((p: WordPhonetic) => p.text)?.text || '',
+                    audioUrl: wordInfo.phonetics.find((p: WordPhonetic) => p.audio)?.audio || '',
+                    meanings: wordInfo.meanings.map((meaning: WordMeaning) => ({
+                        partOfSpeech: meaning.partOfSpeech,
+                        definitions: meaning.definitions.slice(0, 3),
+                        examples: meaning.definitions
+                            .filter(def => def.example)
+                            .map(def => def.example)
+                            .slice(0, 2)
+                    }))
+                };
+
+                logger.log('content', 'Sending word info to panel', { wordData });
+                chrome.runtime.sendMessage({
+                    type: 'SEND_WORD_INFO',
+                    data: wordData
+                });
+            }
+        } catch (error) {
+            logger.log('content', 'Error showing word tooltip', { word, error });
         }
     }
 }
