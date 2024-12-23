@@ -454,43 +454,38 @@ export class TranslationExtension {
                 }
             });
 
-            // 마지막 블록 처리
             if (currentBlock) {
                 textBlocks.push(currentBlock.trim());
             }
 
             // 마우스 위치에 있는 텍스트 블록 찾기
-            for (const block of textBlocks) {
-                const range = document.createRange();
-                const selection = window.getSelection();
-                const textNode = Array.from(element.childNodes).find(
-                    node => node.nodeType === Node.TEXT_NODE && node.textContent?.includes(block)
-                );
+            if (mouseEvent) {
+                for (const block of textBlocks) {
+                    const range = document.createRange();
+                    const textNode = Array.from(element.childNodes).find(
+                        node => node.nodeType === Node.TEXT_NODE && node.textContent?.includes(block)
+                    );
 
-                if (textNode) {
-                    range.selectNodeContents(textNode);
-                    const rect = range.getBoundingClientRect();
-                    if (mouseEvent && rect.top <= mouseEvent.clientY && mouseEvent.clientY <= rect.bottom) {
-                        return block;
+                    if (textNode) {
+                        range.selectNodeContents(textNode);
+                        const rect = range.getBoundingClientRect();
+                        if (rect.top <= mouseEvent.clientY && mouseEvent.clientY <= rect.bottom) {
+                            return block;
+                        }
                     }
                 }
             }
 
-            // 기본값으로 첫 번째 블록 반환
-            return textBlocks[0] || '';
+            // 모든 블록을 하나의 문자열로 합침
+            return textBlocks.join(' ');
         }
 
-        // 일반적인 텍스트 처리
-        let text = '';
-        for (const node of Array.from(element.childNodes)) {
-            if (node.nodeType === Node.TEXT_NODE) {
-                const nodeText = node.textContent?.trim();
-                if (nodeText) {
-                    text += nodeText + ' ';
-                }
-            }
-        }
-        return text.trim();
+        // 일반적인 텍스트 처리 - 모든 텍스트 노드의 내용을 합침
+        return Array.from(element.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent?.trim())
+            .filter(text => text && text.length > 0)
+            .join(' ');
     }
 
     public async applyFullMode(): Promise<void> {

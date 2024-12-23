@@ -165,24 +165,35 @@ export class FullModeService {
                 if (!textNode.parentNode || !textNode.textContent) continue;
                 if (this.shouldSkipTextNode(textNode)) continue;
 
-                const text = textNode.textContent.trim();
-                if (!text || text.length < 2) continue;
+                // 전체 텍스트를 가져옴
+                const fullText = textNode.textContent.trim();
+                if (!fullText || fullText.length < 2) continue;
 
-                // 이미 번역된 요소인지 다시 한번 확인
+                // 이미 번역된 요소인지 확인
                 const existingContainer = textNode.parentElement?.closest('.translation-inline-container');
                 if (existingContainer) continue;
 
-                const sourceLang = await this.translationService.detectLanguage(text);
-                const translation = await this.translationService.translateText(text, sourceLang);
-                
-                if (text.toLowerCase() === translation.toLowerCase()) continue;
+                // 문장 단위로 분리하여 처리
+                const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
+                const translations = await Promise.all(
+                    sentences.map(async (sentence) => {
+                        const sourceLang = await this.translationService.detectLanguage(sentence.trim());
+                        return this.translationService.translateText(sentence.trim(), sourceLang);
+                    })
+                );
 
-                // 번역 컨테이너 생성 및 적용
-                const container = this.createTranslationContainer(text, translation, textNode.parentElement!);
-                
+                // 모든 문장의 번역을 하나의 컨테이너에 표시
+                const container = document.createElement('span');
+                container.className = 'translation-inline-container';
+                container.innerHTML = `
+                    <span class="original" style="display: block; font-size: ${getComputedStyle(textNode.parentElement!).fontSize}; font-weight: 400; color: rgb(32, 34, 36);">${fullText}</span>
+                    <span class="translation" style="display: block; color: #2196F3; font-size: calc(${getComputedStyle(textNode.parentElement!).fontSize} * 0.9); font-style: italic; margin-top: 4px;">${translations.join(' ')}</span>
+                `;
+
                 if (textNode.parentNode) {
                     textNode.parentNode.replaceChild(container, textNode);
                     this.translationElements.add(container);
+                    count++;
                 }
 
                 await new Promise(resolve => setTimeout(resolve, 50));
@@ -190,46 +201,6 @@ export class FullModeService {
                 logger.log('fullMode', 'Error translating text node', { text: textNode.textContent, error });
             }
         }
-    }
-
-    private createTranslationContainer(originalText: string, translatedText: string, parentElement: HTMLElement): HTMLElement {
-        const computedStyle = window.getComputedStyle(parentElement);
-        
-        const container = document.createElement('span');
-        container.className = 'translation-inline-container';
-        container.style.cssText = `
-            display: block;
-            font-family: ${computedStyle.fontFamily};
-            line-height: ${computedStyle.lineHeight};
-            margin: ${computedStyle.margin};
-            padding: ${computedStyle.padding};
-        `;
-
-        const originalSpan = document.createElement('span');
-        originalSpan.className = 'original';
-        originalSpan.textContent = originalText;
-        originalSpan.style.cssText = `
-            display: block;
-            font-size: ${computedStyle.fontSize};
-            font-weight: ${computedStyle.fontWeight};
-            color: ${computedStyle.color};
-        `;
-
-        const translationSpan = document.createElement('span');
-        translationSpan.className = 'translation';
-        translationSpan.textContent = translatedText;
-        translationSpan.style.cssText = `
-            display: block;
-            color: #2196F3;
-            font-size: calc(${computedStyle.fontSize} * 0.9);
-            font-style: italic;
-            margin-top: 4px;
-        `;
-
-        container.appendChild(originalSpan);
-        container.appendChild(translationSpan);
-
-        return container;
     }
 
     private removeExistingTranslations(): void {
@@ -314,7 +285,7 @@ export class FullModeService {
             'story', 'message', 'comment'
         ];
 
-        // BR ���변 텍스트 처리
+        // BR 변 텍스트 처리
         const isBRContext = 
             parent.tagName === 'BR' || 
             Array.from(parent.childNodes).some(child => 
@@ -486,7 +457,13 @@ export class FullModeService {
             
             if (text.toLowerCase() === translation.toLowerCase()) return;
 
-            const container = this.createTranslationContainer(text, translation, element);
+            const container = document.createElement('span');
+            container.className = 'translation-inline-container';
+            container.innerHTML = `
+                <span class="original" style="display: block; font-size: ${getComputedStyle(element).fontSize}; font-weight: 400; color: rgb(32, 34, 36);">${text}</span>
+                <span class="translation" style="display: block; color: #2196F3; font-size: calc(${getComputedStyle(element).fontSize} * 0.9); font-style: italic; margin-top: 4px;">${translation}</span>
+            `;
+
             element.parentNode?.replaceChild(container, element);
             this.translationElements.add(container);
         } catch (error) {
