@@ -218,6 +218,11 @@ export class TranslationExtension {
                     const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
 
+                    // 음성 재생 모드
+                    if (this.useAudioFeature) {
+                        this.audioService.startHoverTimer(textElement!, text);
+                    }
+
                     // 단어 툴팁 모드
                     if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
                         await this.showWordTooltip(textElement!, text.trim());
