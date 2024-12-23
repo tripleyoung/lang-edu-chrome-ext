@@ -149,34 +149,79 @@ export class TranslationExtension {
     }
 
     private processTextElements(): void {
+        logger.log('content', 'Starting text elements processing');
+        
         const walker = document.createTreeWalker(
             document.body,
             NodeFilter.SHOW_TEXT,
             {
                 acceptNode: (node) => {
                     const parent = node.parentElement;
-                    if (!parent || 
-                        parent.tagName === 'SCRIPT' || 
-                        parent.tagName === 'STYLE' || 
-                        parent.tagName === 'NOSCRIPT' ||
-                        parent.closest('.translation-audio-container') ||
-                        getComputedStyle(parent).display === 'none') {
+                    const text = node.textContent?.trim();
+
+                    // 부모 요소의 모든 상위 요소 확인
+                    const hasHiddenParent = parent?.closest('[style*="display: none"]');
+                    
+                    if (!parent) {
+                        logger.log('content', 'Rejected: No parent element', { text });
                         return NodeFilter.FILTER_REJECT;
                     }
-                    const text = node.textContent?.trim();
-                    return text && text.length > 1 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                    
+                    if (parent.tagName === 'SCRIPT' || 
+                        parent.tagName === 'STYLE' || 
+                        parent.tagName === 'NOSCRIPT') {
+                        logger.log('content', 'Rejected: Script/Style tag', { tag: parent.tagName, text });
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    
+                    if (parent.closest('.translation-audio-container')) {
+                        logger.log('content', 'Rejected: Already processed', { text });
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                    
+                    // display: none 체크 개선
+                    if (hasHiddenParent || getComputedStyle(parent).display === 'none') {
+                        logger.log('content', 'Rejected: Hidden element', { text });
+                        return NodeFilter.FILTER_REJECT;
+                    }
+
+                    // 텍스트가 비어있거나 공백만 있는 경우 제외
+                    if (!text || text.length <= 1 || /^\s*$/.test(text)) {
+                        logger.log('content', 'Rejected: Too short or empty', { text });
+                        return NodeFilter.FILTER_REJECT;
+                    }
+
+                    // BR 태그가 있는 경우 특별 처리
+                    if (parent.querySelector('br')) {
+                        const textContent = parent.textContent?.trim();
+                        if (!textContent || textContent.length <= 1) {
+                            logger.log('content', 'Rejected: Empty after BR processing', { text });
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                    }
+
+                    logger.log('content', 'Accepted text node', { 
+                        text,
+                        parentTag: parent.tagName,
+                        parentClass: parent.className
+                    });
+                    return NodeFilter.FILTER_ACCEPT;
                 }
             }
         );
 
+        let count = 0;
         let node;
         while (node = walker.nextNode()) {
             const textNode = node as Text;
             const text = textNode.textContent?.trim();
             if (text) {
                 this.audioService.addAudioButton(textNode.parentElement!, text);
+                count++;
             }
         }
+
+        logger.log('content', 'Finished processing text elements', { processedCount: count });
     }
 
     private setupEventListeners(): void {
@@ -441,7 +486,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직���적인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
+    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {
