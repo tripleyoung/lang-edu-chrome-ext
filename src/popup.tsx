@@ -155,6 +155,34 @@ const PopupPanel: React.FC = () => {
         }
     };
 
+    const handleLanguageChange = async (type: 'nativeLanguage' | 'learningLanguage', value: Language) => {
+        const newSettings = { ...settings, [type]: value };
+        setSettings(newSettings);
+        await chrome.storage.sync.set({ [type]: value });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: newSettings
+            });
+        }
+    };
+
+    const handleAutoOpenPanelToggle = async () => {
+        const newValue = !settings.autoOpenPanel;
+        setSettings({ ...settings, autoOpenPanel: newValue });
+        await chrome.storage.sync.set({ autoOpenPanel: newValue });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: { ...settings, autoOpenPanel: newValue }
+            });
+        }
+    };
+
     const openTranslationPanel = async () => {
         await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
     };
@@ -163,128 +191,129 @@ const PopupPanel: React.FC = () => {
         <div className="p-4 bg-gray-900 text-white min-w-[300px]">
             <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
             
-            <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('usePanel')}</span>
+            {/* 번역 모드 섹션 */}
+            <div className="space-y-4 mb-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('translationMode')}</h3>
+                <div className="flex flex-col gap-2">
                     <button
-                        onClick={handlePanelToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.usePanel 
-                                ? 'bg-green-600 hover:bg-green-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            !settings.useTooltip && !settings.useFullMode 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
+                        onClick={() => {
+                            handleTooltipToggle();
+                            handleFullModeToggle();
+                        }}
                     >
-                        {settings.usePanel ? t('use') : t('notUse')}
+                        {t('noTranslation')}
                     </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useTooltip')}</span>
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useTooltip 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleTooltipToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useTooltip 
-                                ? 'bg-purple-600 hover:bg-purple-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useTooltip ? t('enabled') : t('disabled')}
+                        {t('tooltipMode')}
                     </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useFullMode')}</span>
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useFullMode 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleFullModeToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useFullMode 
-                                ? 'bg-orange-600 hover:bg-orange-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useFullMode ? t('enabled') : t('disabled')}
+                        {t('fullMode')}
                     </button>
                 </div>
+            </div>
 
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useAudioFeature')}</span>
+            {/* 추가 기능 섹션 */}
+            <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('additionalFeatures')}</h3>
+                <div className="flex flex-col gap-2">
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useAudioFeature 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleAudioFeatureToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useAudioFeature 
-                                ? 'bg-blue-600 hover:bg-blue-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useAudioFeature ? t('enabled') : t('disabled')}
+                        {t('audioMode')} 🔊
                     </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useWordTooltip')}</span>
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useWordTooltip 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleWordTooltipToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useWordTooltip 
-                                ? 'bg-pink-600 hover:bg-pink-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useWordTooltip ? t('enabled') : t('disabled')}
+                        {t('wordTooltip')}
                     </button>
                 </div>
+            </div>
 
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('nativeLanguage')}</span>
-                    <select 
-                        value={settings.nativeLanguage}
-                        onChange={e => {
-                            const newValue = e.target.value as Language;
-                            setSettings({ ...settings, nativeLanguage: newValue });
-                            chrome.storage.sync.set({ nativeLanguage: newValue });
-                        }}
-                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
-                    >
-                        <option value="ko">한국어</option>
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                    </select>
+            {/* 언어 설정 섹션 */}
+            <div className="mb-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('languageSettings')}</h3>
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-300">{t('nativeLanguage')}</span>
+                        <select
+                            value={settings.nativeLanguage}
+                            onChange={(e) => handleLanguageChange('nativeLanguage', e.target.value as Language)}
+                            className="bg-gray-700 text-white rounded px-3 py-1 border border-gray-600"
+                        >
+                            <option value="ko">한국어</option>
+                            <option value="en">English</option>
+                            <option value="ja">日本語</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-300">{t('learningLanguage')}</span>
+                        <select
+                            value={settings.learningLanguage}
+                            onChange={(e) => handleLanguageChange('learningLanguage', e.target.value as Language)}
+                            className="bg-gray-700 text-white rounded px-3 py-1 border border-gray-600"
+                        >
+                            <option value="en">English</option>
+                            <option value="ko">한국어</option>
+                            <option value="ja">日本語</option>
+                        </select>
+                    </div>
                 </div>
+            </div>
 
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('learningLanguage')}</span>
-                    <select 
-                        value={settings.learningLanguage}
-                        onChange={e => {
-                            const newValue = e.target.value as Language;
-                            setSettings({ ...settings, learningLanguage: newValue });
-                            chrome.storage.sync.set({ learningLanguage: newValue });
-                        }}
-                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
-                    >
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                        <option value="ko">한국어</option>
-                    </select>
+            {/* 패널 설정 섹션 */}
+            <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                    <span className="text-gray-300">{t('panel')}</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.usePanel}
+                            onChange={handlePanelToggle}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                 </div>
-
-                <div className="mt-6">
-                    <button
-                        onClick={openTranslationPanel}
-                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
-                    >
-                        {t('openPanel')}
-                    </button>
+                <div className="flex items-center justify-between">
+                    <span className="text-gray-300">{t('autoOpenPanel')}</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.autoOpenPanel}
+                            onChange={handleAutoOpenPanelToggle}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
                 </div>
             </div>
         </div>
