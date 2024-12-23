@@ -10,6 +10,14 @@ export class AudioService {
 
     public async initialize(): Promise<void> {
         if (this.isInitialized) return;
+        
+        // voices 초기화를 기다림
+        if (window.speechSynthesis.getVoices().length === 0) {
+            await new Promise<void>(resolve => {
+                window.speechSynthesis.onvoiceschanged = () => resolve();
+            });
+        }
+        
         this.isInitialized = true;
     }
 
@@ -23,25 +31,32 @@ export class AudioService {
             // 기존 음성 중지
             window.speechSynthesis.cancel();
 
+            // voices 로딩 확인
+            await this.initialize();
+
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = this.getLangCode(lang);
-            utterance.rate = 0.9;  // 속도 조절
-            utterance.pitch = 1.0; // 음높이
-            utterance.volume = 1.0; // 볼륨
+            utterance.rate = 0.9;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
 
-            // 음성 목록에서 적절한 음성 선택
+            // 음성 선택
             const voices = window.speechSynthesis.getVoices();
             const voice = voices.find(v => v.lang.startsWith(utterance.lang));
             if (voice) {
                 utterance.voice = voice;
             }
 
+            // 음성 재생 시작
             window.speechSynthesis.speak(utterance);
 
-            // 음성 재생 완료 대기
+            // 재생 완료 대기
             return new Promise((resolve) => {
                 utterance.onend = () => resolve();
-                utterance.onerror = () => resolve();
+                utterance.onerror = () => {
+                    logger.log('audio', 'Error playing audio');
+                    resolve();
+                };
             });
         } catch (error) {
             logger.log('audio', 'Error playing audio', error);

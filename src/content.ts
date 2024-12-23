@@ -247,13 +247,19 @@ export class TranslationExtension {
                 }
 
                 hoverTimer = window.setTimeout(async () => {
-                    const text = this.getElementText(textElement!, e);
-                    if (text) {
-                        const sourceLang = await this.translationService.detectLanguage(text);
-                        await this.audioService.playText(text, sourceLang);
+                    try {
+                        const text = this.getElementText(textElement!, e);
+                        if (text) {
+                            const sourceLang = await this.translationService.detectLanguage(text);
+                            logger.log('content', 'Playing audio', { text, lang: sourceLang });
+                            await this.audioService.playText(text, sourceLang);
+                        }
+                    } catch (error) {
+                        logger.log('content', 'Error playing audio', error);
+                    } finally {
+                        timerUI?.remove();
+                        timerUI = null;
                     }
-                    timerUI?.remove();
-                    timerUI = null;
                 }, 2000);
             }
 
