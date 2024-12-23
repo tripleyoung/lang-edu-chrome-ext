@@ -89,7 +89,7 @@ export class AudioService {
             let langToUse = lang;
 
             if (lang === nativeLang) {
-                textToSpeak = await this.translationService.translateText(text, learningLang);
+                textToSpeak = await this.translationService.translateText(text, lang);
                 langToUse = learningLang;
             }
 
