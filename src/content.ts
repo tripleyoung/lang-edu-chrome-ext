@@ -108,11 +108,8 @@ export class TranslationExtension {
 
     private async updateSettings(settings: any): Promise<void> {
         try {
-            logger.log('content', 'Updating settings', settings);
-
             const prevAudioFeature = this.useAudioFeature;
-            const prevFullMode = this.useFullMode;
-
+            
             // 새 설정 적용
             this.usePanel = settings.usePanel;
             this.useTooltip = settings.useTooltip;
@@ -120,20 +117,13 @@ export class TranslationExtension {
             this.useAudioFeature = settings.useAudioFeature;
             this.useWordTooltip = settings.useWordTooltip;
 
-            // 전체 번역 모드 상태 변경 시
-            if (this.useFullMode !== prevFullMode) {
-                if (this.useFullMode) {
-                    await this.fullModeService.applyFullMode();
-                } else {
-                    this.fullModeService.disableFullMode();
-                }
-            }
-
             // 음성 기능 상태 변경 시
             if (this.useAudioFeature !== prevAudioFeature) {
                 if (this.useAudioFeature) {
+                    await this.audioService.initialize();
                     this.processTextElements();
                 } else {
+                    this.audioService.cleanup();
                     document.querySelectorAll('.translation-audio-container').forEach(container => {
                         const text = container.textContent;
                         const textNode = document.createTextNode(text || '');
@@ -180,75 +170,109 @@ export class TranslationExtension {
     }
 
     private setupEventListeners(): void {
+        let hoverTimer: number | null = null;
+        let timerUI: HTMLElement | null = null;
+
+        const createTimerUI = (x: number, y: number) => {
+            timerUI = document.createElement('div');
+            timerUI.className = 'audio-timer';
+            timerUI.innerHTML = `
+                <svg width="32" height="32" viewBox="0 0 32 32">
+                    <!-- 배경 원 -->
+                    <circle
+                        cx="16"
+                        cy="16"
+                        r="15"
+                        fill="rgba(0, 0, 0, 0.7)"
+                        stroke="none"
+                    />
+                    <!-- 프로그레스 원 -->
+                    <circle
+                        cx="16"
+                        cy="16"
+                        r="14"
+                        fill="none"
+                        stroke="#4a9eff"
+                        stroke-width="2"
+                        stroke-dasharray="87.96459430051421"
+                        stroke-dashoffset="87.96459430051421"
+                        transform="rotate(-90 16 16)"
+                    >
+                        <animate
+                            attributeName="stroke-dashoffset"
+                            from="87.96459430051421"
+                            to="0"
+                            dur="2s"
+                            fill="freeze"
+                        />
+                    </circle>
+                    <!-- 음성 아이콘 -->
+                    <path
+                        d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
+                        fill="none"
+                        stroke="#ffffff"
+                        stroke-width="1.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+            `;
+            timerUI.style.cssText = `
+                position: fixed;
+                left: ${x + 10}px;
+                top: ${y + 10}px;
+                z-index: 2147483647;
+                pointer-events: none;
+                filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+            `;
+            document.body.appendChild(timerUI);
+            return timerUI;
+        };
+
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
-            
-            // 이미 처리된 요소는 건너뛰기
             if (target.closest('.translation-tooltip') || 
                 target.closest('.translation-audio-container') ||
                 target.closest('.translation-inline-container')) {
                 return;
             }
 
-            // 텍스트 요소 찾기 (수정된 부분)
-            let textElement: HTMLElement | null = null;
-            
-            // 1. 직접 텍스트를 가진 요소인 경우
-            if (this.hasDirectText(target)) {
-                textElement = target;
-            } 
-            // 2. P 태그인 경우 특별 처리
-            else if (target.tagName === 'P') {
-                textElement = target;
-            }
-            // 3. 그 외의 경우 가장 가까운 텍스트 요소 찾기
-            else {
-                textElement = this.findClosestTextElement(target);
-            }
-
+            let textElement = this.findClosestTextElement(target);
             if (!textElement) return;
 
-            // 디바운스 처리
-            if (this.debounceTimer) {
-                clearTimeout(this.debounceTimer);
+            // 2초 타이머 시작
+            if (this.useAudioFeature) {
+                if (!timerUI) {
+                    timerUI = createTimerUI(e.clientX, e.clientY);
+                }
+
+                hoverTimer = window.setTimeout(async () => {
+                    const text = this.getElementText(textElement!, e);
+                    if (text) {
+                        const sourceLang = await this.translationService.detectLanguage(text);
+                        await this.audioService.playText(text, sourceLang);
+                    }
+                    timerUI?.remove();
+                    timerUI = null;
+                }, 2000);
             }
 
-            this.debounceTimer = window.setTimeout(async () => {
-                try {
-                    const text = this.getElementText(textElement!, e);
-                    if (!text || text.length < 2) return;
-
-                    // 단어 툴팁 모드
-                    if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
-                        await this.showWordTooltip(textElement!, text.trim());
-                        return;
-                    }
-
-                    // 일반 툴팁 모드
-                    if (this.useTooltip) {
-                        await this.tooltipService.showTooltip(textElement!, text);
-                    }
-
-                    // 패널 처리
-                    if (this.usePanel || this.autoOpenPanel) {
-                        await this.sendTranslationToPanel(text);
-                    }
-                } catch (error) {
-                    logger.log('content', 'Error in mouseenter handler', error);
-                }
-            }, this.debounceTime);
+            // 기존 툴팁 로직...
         };
 
-        // 이벤트 리스너 등록 (캡처링 페이즈 사용)
-        document.body.addEventListener('mouseover', handleMouseOver, { 
-            passive: true,
-            capture: true
-        });
+        const handleMouseOut = () => {
+            if (hoverTimer) {
+                clearTimeout(hoverTimer);
+                hoverTimer = null;
+            }
+            if (timerUI) {
+                timerUI.remove();
+                timerUI = null;
+            }
+        };
 
-        // 클린업 핸들러
-        this.cleanupHandlers.add(() => {
-            document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
-        });
+        document.body.addEventListener('mouseover', handleMouseOver, { passive: true });
+        document.body.addEventListener('mouseout', handleMouseOut, { passive: true });
     }
 
     private cleanup(): void {

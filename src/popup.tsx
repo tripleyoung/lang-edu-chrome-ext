@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
+import * as Switch from '@radix-ui/react-switch';
 import './styles.css';
 import { messages, Language } from './i18n/messages';
 import { Logger } from './logger';
@@ -128,15 +129,42 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleAudioFeatureToggle = async () => {
-        const newSettings = { ...settings, useAudioFeature: !settings.useAudioFeature };
-        setSettings(newSettings);
-        await chrome.storage.sync.set({ useAudioFeature: newSettings.useAudioFeature });
+        try {
+            const newValue = !settings.useAudioFeature;
+            const newSettings = { ...settings, useAudioFeature: newValue };
+            setSettings(newSettings);
+            
+            // 스토리지에 설정 저장
+            await chrome.storage.sync.set({ useAudioFeature: newValue });
+            
+            // 현재 활성 탭에 설정 변경 알림
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.id) {
+                await chrome.tabs.sendMessage(tab.id, {
+                    type: 'UPDATE_SETTINGS',
+                    settings: newSettings
+                });
+                
+                // 음성 기능이 활성화되면 페이지 새로고침
+                if (newValue) {
+                    await chrome.tabs.reload(tab.id);
+                }
+            }
+        } catch (error) {
+            logger.log('popup', 'Error toggling audio feature', error);
+        }
+    };
+
+    const handleAutoOpenPanelToggle = async () => {
+        const newValue = !settings.autoOpenPanel;
+        setSettings({ ...settings, autoOpenPanel: newValue });
+        await chrome.storage.sync.set({ autoOpenPanel: newValue });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-            await chrome.tabs.sendMessage(tab.id, {
+            chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: newSettings
+                settings: { ...settings, autoOpenPanel: newValue }
             });
         }
     };
@@ -164,127 +192,86 @@ const PopupPanel: React.FC = () => {
             <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
             
             <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('usePanel')}</span>
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('translationMode')}</h3>
+                <div className="flex flex-col gap-2">
                     <button
-                        onClick={handlePanelToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.usePanel 
-                                ? 'bg-green-600 hover:bg-green-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            !settings.useTooltip && !settings.useFullMode 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
+                        onClick={() => {
+                            handleTooltipToggle();
+                            handleFullModeToggle();
+                        }}
                     >
-                        {settings.usePanel ? t('use') : t('notUse')}
+                        {t('noTranslation')}
                     </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useTooltip')}</span>
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useTooltip 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleTooltipToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useTooltip 
-                                ? 'bg-purple-600 hover:bg-purple-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useTooltip ? t('enabled') : t('disabled')}
+                        {t('tooltipMode')}
                     </button>
-                </div>
-
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useFullMode')}</span>
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useFullMode 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleFullModeToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useFullMode 
-                                ? 'bg-orange-600 hover:bg-orange-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useFullMode ? t('enabled') : t('disabled')}
+                        {t('fullMode')}
                     </button>
                 </div>
 
-                <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useAudioFeature')}</span>
+                <h3 className="text-lg font-semibold text-gray-300 mt-4 mb-2">{t('additionalFeatures')}</h3>
+                <div className="flex flex-col gap-2">
                     <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useAudioFeature 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
                         onClick={handleAudioFeatureToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useAudioFeature 
-                                ? 'bg-blue-600 hover:bg-blue-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
                     >
-                        {settings.useAudioFeature ? t('enabled') : t('disabled')}
+                        {t('audioMode')} 🔊
                     </button>
+                    <button
+                        className={`px-4 py-2 rounded-lg transition-colors ${
+                            settings.useWordTooltip 
+                                ? 'bg-blue-600 text-white' 
+                                : 'bg-gray-700 text-gray-300'
+                        }`}
+                        onClick={handleWordTooltipToggle}
+                    >
+                        {t('wordTooltip')}
+                    </button>
+                </div>
+
+                <div className="flex items-center justify-between mt-4">
+                    <span className="text-gray-300">{t('panel')}</span>
+                    <Switch.Root
+                        checked={settings.usePanel}
+                        onCheckedChange={handlePanelToggle}
+                        className="w-11 h-6 bg-gray-600 rounded-full relative data-[state=checked]:bg-blue-600"
+                    >
+                        <Switch.Thumb className="block w-5 h-5 bg-white rounded-full transition-transform duration-100 translate-x-0.5 will-change-transform data-[state=checked]:translate-x-[22px]" />
+                    </Switch.Root>
                 </div>
 
                 <div className="flex items-center justify-between">
-                    <span className="text-sm">{t('useWordTooltip')}</span>
-                    <button
-                        onClick={handleWordTooltipToggle}
-                        className={`
-                            px-4 py-2 rounded-lg transition-all duration-300
-                            ${settings.useWordTooltip 
-                                ? 'bg-pink-600 hover:bg-pink-700' 
-                                : 'bg-gray-600 hover:bg-gray-700'
-                            }
-                        `}
+                    <span className="text-gray-300">{t('autoOpenPanel')}</span>
+                    <Switch.Root
+                        checked={settings.autoOpenPanel}
+                        onCheckedChange={handleAutoOpenPanelToggle}
                     >
-                        {settings.useWordTooltip ? t('enabled') : t('disabled')}
-                    </button>
-                </div>
-
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('nativeLanguage')}</span>
-                    <select 
-                        value={settings.nativeLanguage}
-                        onChange={e => {
-                            const newValue = e.target.value as Language;
-                            setSettings({ ...settings, nativeLanguage: newValue });
-                            chrome.storage.sync.set({ nativeLanguage: newValue });
-                        }}
-                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
-                    >
-                        <option value="ko">한국어</option>
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                    </select>
-                </div>
-
-                <div className="flex items-center justify-between mt-4">
-                    <span className="text-sm">{t('learningLanguage')}</span>
-                    <select 
-                        value={settings.learningLanguage}
-                        onChange={e => {
-                            const newValue = e.target.value as Language;
-                            setSettings({ ...settings, learningLanguage: newValue });
-                            chrome.storage.sync.set({ learningLanguage: newValue });
-                        }}
-                        className="px-4 py-2 rounded-lg bg-gray-700 text-white"
-                    >
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                        <option value="ko">한국어</option>
-                    </select>
-                </div>
-
-                <div className="mt-6">
-                    <button
-                        onClick={openTranslationPanel}
-                        className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300"
-                    >
-                        {t('openPanel')}
-                    </button>
+                        <Switch.Thumb />
+                    </Switch.Root>
                 </div>
             </div>
         </div>
