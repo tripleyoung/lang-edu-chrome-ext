@@ -261,55 +261,14 @@ export class TranslationExtension {
             // 이미 처리된 요소는 건너뛰기
             if (target.closest('.translation-tooltip') || 
                 target.closest('.translation-audio-container') ||
-                target.closest('.translation-inline-container')) {
+                target.closest('.translation-inline-container') ||
+                target.closest('.word-tooltip')) {
                 return;
             }
 
-            // 텍스트 요소 찾기
-            let textElement: HTMLElement | null = null;
-            
-            // BR 태그가 있는 경우 텍스트를 span으로 분리
-            if (target.querySelector('br') || target.tagName === 'BR') {
-                const textBlocks: string[] = [];
-                let currentBlock = '';
-                let currentNode: Node | null = null;
-
-                // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 분리
-                target.childNodes.forEach(node => {
-                    if (node.nodeType === Node.TEXT_NODE) {
-                        const text = node.textContent?.trim();
-                        if (text) {
-                            currentBlock = text;
-                            currentNode = node;
-                            
-                            // 텍스트 노드를 span으로 교체
-                            const span = document.createElement('span');
-                            span.textContent = currentBlock;
-                            if (currentNode.parentNode) {
-                                currentNode.parentNode.replaceChild(span, currentNode);
-                                textElement = span;
-                            }
-                        }
-                    }
-                });
-
-                if (!textElement) {
-                    textElement = target;
-                }
-            } else {
-                // 일반적인 텍스트 요소 찾기
-                if (this.hasDirectText(target)) {
-                    textElement = target;
-                } else if (target.tagName === 'P') {
-                    textElement = target;
-                } else {
-                    textElement = this.findClosestTextElement(target);
-                }
-            }
-
+            let textElement = this.findClosestTextElement(target);
             if (!textElement) return;
 
-            // 디바운스 처리
             if (this.debounceTimer) {
                 clearTimeout(this.debounceTimer);
             }
@@ -318,21 +277,6 @@ export class TranslationExtension {
                 try {
                     const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
-
-                    // 단어 툴팁 모드
-                    if (this.useWordTooltip) {
-                        // 클릭한 정확한 위치의 단어 찾기
-                        const clickedWord = this.getWordAtPosition(textElement!, e);
-                        if (clickedWord) {
-                            const word = clickedWord.word;
-                            // 영어 단어인 경우에만 처리
-                            if (/^[A-Za-z]+$/.test(word)) {
-                                const context = this.getElementText(textElement!);
-                                await this.wordTooltipService.showWordTooltip(clickedWord.element, word, context);
-                                return;
-                            }
-                        }
-                    }
 
                     // 음성 재생 모드
                     if (this.useAudioFeature) {
@@ -365,12 +309,23 @@ export class TranslationExtension {
             document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
         });
 
-        // 클릭 이벤트 추가
+        // 클릭 이벤트 추가 (마우스오버 대신 클릭으로 변경)
         document.body.addEventListener('click', async (e) => {
             if (!this.useWordTooltip) return;
             
             const target = e.target as HTMLElement;
             if (target.closest('.word-tooltip')) return;  // 툴팁 내부 클릭은 무시
+
+            // 이미 하이라이트된 단어를 클릭한 경우
+            if (target.classList.contains('word-highlight')) {
+                const word = target.textContent || '';
+                if (/^[A-Za-z]+$/.test(word)) {
+                    const context = this.getElementText(target.parentElement!);
+                    await this.wordTooltipService.showWordTooltip(target, word, context);
+                    e.stopPropagation();
+                    return;
+                }
+            }
 
             const textElement = this.findClosestTextElement(target);
             if (!textElement) return;
@@ -379,6 +334,8 @@ export class TranslationExtension {
             if (clickedWord && /^[A-Za-z]+$/.test(clickedWord.word)) {
                 const context = this.getElementText(textElement);
                 await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
+                e.stopPropagation();
+                return;
             }
         });
     }
@@ -550,7 +507,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
+    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메��드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {
@@ -713,7 +670,6 @@ export class TranslationExtension {
     // 클릭한 위치의 단어를 찾는 새로운 메서드
     private getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
         const range = document.createRange();
-        const selection = window.getSelection();
         
         // 텍스트 노드들을 순회
         const walker = document.createTreeWalker(
@@ -744,15 +700,32 @@ export class TranslationExtension {
                 if (event.clientX >= rect.left && event.clientX <= rect.right &&
                     event.clientY >= rect.top && event.clientY <= rect.bottom) {
                     
-                    // 단어를 span으로 감싸기
-                    const span = document.createElement('span');
-                    span.textContent = word;
-                    range.surroundContents(span);
-                    
-                    return {
-                        word: word,
-                        element: span
-                    };
+                    try {
+                        // 단어를 span으로 감싸기
+                        const span = document.createElement('span');
+                        span.className = 'word-highlight';
+                        span.textContent = word;
+                        range.surroundContents(span);
+
+                        // 스타일 적용
+                        span.style.cssText = `
+                            cursor: pointer;
+                            display: inline-block;
+                            position: relative;
+                        `;
+                        
+                        return {
+                            word: word,
+                            element: span
+                        };
+                    } catch (error) {
+                        logger.log('content', 'Error wrapping word with span', { word, error });
+                        // span 생성 실패 시 원래 요소 반환
+                        return {
+                            word: word,
+                            element: element
+                        };
+                    }
                 }
                 
                 pos = wordStart + word.length;

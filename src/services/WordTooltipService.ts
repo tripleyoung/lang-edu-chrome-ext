@@ -38,19 +38,30 @@ export class WordTooltipService {
             // 기존 툴팁 제거
             this.removeTooltips();
 
-            // 1. 문맥에서 단어 번역 시도
-            const contextTranslation = await this.translationService.translateText(context, 'en');
-            const words = context.toLowerCase().split(/\s+/);
-            const translations = contextTranslation.split(/\s+/);
-            const wordIndex = words.indexOf(word.toLowerCase());
+            // 설정 가져오기
+            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+            const targetLang = settings.nativeLanguage || 'ko';  // 번역될 언어 (기본값: 한국어)
+            const sourceLang = settings.learningLanguage || 'en'; // 원본 언어 (기본값: 영어)
 
             let translation = '';
-            if (wordIndex >= 0 && wordIndex < translations.length) {
-                // 문맥에서 찾은 번역
-                translation = translations[wordIndex];
-            } else {
-                // 단어 자체 번역
-                translation = await this.translationService.translateText(word, 'en');
+
+            try {
+                // 1. 문맥에서 단어 번역 시도
+                const contextTranslation = await this.translationService.translateText(context, sourceLang);
+                const words = context.toLowerCase().split(/\s+/);
+                const translations = contextTranslation.split(/\s+/);
+                const wordIndex = words.indexOf(word.toLowerCase());
+
+                if (wordIndex >= 0 && wordIndex < translations.length) {
+                    // 문맥에서 찾은 번역
+                    translation = translations[wordIndex];
+                } else {
+                    // 단어 자체 번역
+                    translation = await this.translationService.translateText(word, sourceLang);
+                }
+            } catch (error) {
+                // 번역 실패 시 단어 자체 번역 시도
+                translation = await this.translationService.translateText(word, sourceLang);
             }
 
             // 2. 툴팁 생성 및 표시
