@@ -187,6 +187,20 @@ const PopupPanel: React.FC = () => {
         await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
     };
 
+    const handleLanguageChange = async (type: 'nativeLanguage' | 'learningLanguage', value: Language) => {
+        const newSettings = { ...settings, [type]: value };
+        setSettings(newSettings);
+        await chrome.storage.sync.set({ [type]: value });
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: newSettings
+            });
+        }
+    };
+
     return (
         <div className="p-4 bg-gray-900 text-white min-w-[300px]">
             <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
@@ -272,6 +286,36 @@ const PopupPanel: React.FC = () => {
                     >
                         <Switch.Thumb />
                     </Switch.Root>
+                </div>
+            </div>
+
+            <div className="mt-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('languageSettings')}</h3>
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-300">{t('nativeLanguage')}</span>
+                        <select
+                            value={settings.nativeLanguage}
+                            onChange={(e) => handleLanguageChange('nativeLanguage', e.target.value as Language)}
+                            className="bg-gray-700 text-white rounded px-2 py-1"
+                        >
+                            <option value="ko">한국어</option>
+                            <option value="en">English</option>
+                            <option value="ja">日本語</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-gray-300">{t('learningLanguage')}</span>
+                        <select
+                            value={settings.learningLanguage}
+                            onChange={(e) => handleLanguageChange('learningLanguage', e.target.value as Language)}
+                            className="bg-gray-700 text-white rounded px-2 py-1"
+                        >
+                            <option value="en">English</option>
+                            <option value="ko">한국어</option>
+                            <option value="ja">日本語</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>

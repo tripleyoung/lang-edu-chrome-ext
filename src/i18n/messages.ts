@@ -9,7 +9,10 @@ export const messages = {
         audioMode: '문장 발음 듣기',
         wordTooltip: '단어 툴팁 모드',
         panel: '번역 패널',
-        autoOpenPanel: '자동 패널 열기'
+        autoOpenPanel: '자동 패널 열기',
+        languageSettings: '언어 설정',
+        nativeLanguage: '모국어',
+        learningLanguage: '학습 언어',
     },
     en: {
         settings: 'Settings',
@@ -21,7 +24,10 @@ export const messages = {
         audioMode: 'Text-to-Speech',
         wordTooltip: 'Word Tooltip Mode',
         panel: 'Translation Panel',
-        autoOpenPanel: 'Auto Open Panel'
+        autoOpenPanel: 'Auto Open Panel',
+        languageSettings: 'Language Settings',
+        nativeLanguage: 'Native Language',
+        learningLanguage: 'Learning Language',
     },
     ja: {
         settings: '設定',
@@ -33,7 +39,10 @@ export const messages = {
         audioMode: '音声読み上げ',
         wordTooltip: '単語ツールチップ',
         panel: '翻訳パネル',
-        autoOpenPanel: 'パネル自動表示'
+        autoOpenPanel: 'パネル自動表示',
+        languageSettings: '言語設定',
+        nativeLanguage: '母国語',
+        learningLanguage: '学習言語',
     },
     wordTooltipMode: {
         ko: '단어 툴팁 모드',

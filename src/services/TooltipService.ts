@@ -42,12 +42,17 @@ export class TooltipService {
         }
     }
 
-    async showTooltip(element: HTMLElement, text: string): Promise<void> {
+    async showTooltip(params: {
+        element: HTMLElement;
+        text: string;
+        translation: string;
+        sourceLang: string;
+    }): Promise<void> {
         // 이미 처리 중이면 무시
         if (this.isProcessing) return;
         
         // 같은 요소에 대한 툴팁이면 유지
-        if (this.currentElement === element) return;
+        if (this.currentElement === params.element) return;
 
         try {
             this.isProcessing = true;
@@ -60,7 +65,7 @@ export class TooltipService {
             this.tooltipDebounceTimer = window.setTimeout(async () => {
                 this.removeTooltip();
                 
-                const cleanText = text.trim();
+                const cleanText = params.translation.trim();
                 if (!cleanText || cleanText.length <= 1) return;
 
                 // 문장 단위로 분리하여 처리
@@ -79,7 +84,7 @@ export class TooltipService {
                 tooltip.className = 'translation-tooltip translation-inline-container';
                 tooltip.innerHTML = `<div class="tooltip-content" style="white-space: pre-line;">${translations.join(' ')}</div>`;
 
-                const elementRect = element.getBoundingClientRect();
+                const elementRect = params.element.getBoundingClientRect();
                 tooltip.style.cssText = `
                     position: fixed;
                     visibility: hidden;
@@ -106,7 +111,7 @@ export class TooltipService {
                 document.body.appendChild(tooltip);
 
                 const updateTooltipPosition = () => {
-                    const rect = element.getBoundingClientRect();
+                    const rect = params.element.getBoundingClientRect();
                     const tooltipRect = tooltip.getBoundingClientRect();
                     
                     let left = rect.left;
@@ -125,7 +130,7 @@ export class TooltipService {
                 updateTooltipPosition();
                 
                 this.currentTooltip = tooltip;
-                this.currentElement = element;
+                this.currentElement = params.element;
             }, 200); // 200ms 디바운스
 
         } catch (error) {

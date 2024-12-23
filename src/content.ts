@@ -231,16 +231,16 @@ export class TranslationExtension {
 
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
-            if (target.closest('.translation-tooltip') || 
-                target.closest('.translation-audio-container') ||
-                target.closest('.translation-inline-container')) {
+            
+            // 음성 재생 UI가 이미 있는 경우만 제외
+            if (target.closest('.translation-audio-container')) {
                 return;
             }
 
             let textElement = this.findClosestTextElement(target);
             if (!textElement) return;
 
-            // 2초 타이머 시작
+            // 음성 재생 타이머 (useAudioFeature가 활성화된 경우)
             if (this.useAudioFeature) {
                 if (!timerUI) {
                     timerUI = createTimerUI(e.clientX, e.clientY);
@@ -263,7 +263,42 @@ export class TranslationExtension {
                 }, 2000);
             }
 
-            // 기존 툴팁 로직...
+            // 툴팁 표시 로직 (useTooltip이 활성화된 경우)
+            if (this.useTooltip && !target.closest('.translation-tooltip')) {
+                const text = this.getElementText(textElement, e);
+                if (text && text.length > 0) {
+                    try {
+                        // 이전 처리 중인 요소와 다른 경우에만 처리
+                        if (this.processingElement !== textElement) {
+                            this.processingElement = textElement;
+                            
+                            // 디바운스 처리
+                            if (this.debounceTimer) {
+                                clearTimeout(this.debounceTimer);
+                            }
+                            
+                            this.debounceTimer = window.setTimeout(async () => {
+                                const sourceLang = await this.translationService.detectLanguage(text);
+                                const translation = await this.translationService.translateText(text, sourceLang);
+                                
+                                if (translation && translation !== text) {
+                                    this.tooltipService.showTooltip({
+                                        element: textElement,
+                                        text,
+                                        translation,
+                                        sourceLang
+                                    });
+                                }
+                                
+                                this.processingElement = null;
+                            }, this.debounceTime);
+                        }
+                    } catch (error) {
+                        logger.log('content', 'Error showing tooltip', error);
+                        this.processingElement = null;
+                    }
+                }
+            }
         };
 
         const handleMouseOut = () => {
@@ -426,7 +461,7 @@ export class TranslationExtension {
             }
         }
 
-        // 현재 요소가 직접 텍스트를 포함하고 있는지 확인
+        // 현재 요소가 직접 텍스트를 포함하는 있는지 확인
         if (this.hasDirectText(element) && !excludeTags.includes(element.tagName)) {
             return element;
         }
