@@ -319,28 +319,24 @@ export class TranslationExtension {
                     const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
 
+                    // 단어 툴팁 모드
+                    if (this.useWordTooltip) {
+                        // 클릭한 정확한 위치의 단어 찾기
+                        const clickedWord = this.getWordAtPosition(textElement!, e);
+                        if (clickedWord) {
+                            const word = clickedWord.word;
+                            // 영어 단어인 경우에만 처리
+                            if (/^[A-Za-z]+$/.test(word)) {
+                                const context = this.getElementText(textElement!);
+                                await this.wordTooltipService.showWordTooltip(clickedWord.element, word, context);
+                                return;
+                            }
+                        }
+                    }
+
                     // 음성 재생 모드
                     if (this.useAudioFeature) {
                         this.audioService.startHoverTimer(textElement!, text);
-                    }
-
-                    // 단어 툴팁 모드
-                    if (this.useWordTooltip) {
-                        const selectedText = window.getSelection()?.toString().trim();
-                        if (selectedText && /^[A-Za-z]+$/.test(selectedText)) {
-                            const word = selectedText;
-                            const context = this.getElementText(textElement!);
-                            await this.wordTooltipService.showWordTooltip(textElement!, word, context);
-                            return;
-                        }
-                        
-                        // 단일 단어 클릭 처리
-                        if (/^[A-Za-z]+$/.test(text.trim())) {
-                            const word = text.trim();
-                            const context = this.getElementText(textElement!);
-                            await this.wordTooltipService.showWordTooltip(textElement!, word, context);
-                            return;
-                        }
                     }
 
                     // 일반 툴팁 모드
@@ -367,6 +363,23 @@ export class TranslationExtension {
         // 클린업 핸들러
         this.cleanupHandlers.add(() => {
             document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
+        });
+
+        // 클릭 이벤트 추가
+        document.body.addEventListener('click', async (e) => {
+            if (!this.useWordTooltip) return;
+            
+            const target = e.target as HTMLElement;
+            if (target.closest('.word-tooltip')) return;  // 툴팁 내부 클릭은 무시
+
+            const textElement = this.findClosestTextElement(target);
+            if (!textElement) return;
+
+            const clickedWord = this.getWordAtPosition(textElement, e);
+            if (clickedWord && /^[A-Za-z]+$/.test(clickedWord.word)) {
+                const context = this.getElementText(textElement);
+                await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
+            }
         });
     }
 
@@ -695,6 +708,58 @@ export class TranslationExtension {
             logger.log('content', 'Error in full translation mode', error);
             throw error;
         }
+    }
+
+    // 클릭한 위치의 단어를 찾는 새로운 메서드
+    private getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        // 텍스트 노드들을 순회
+        const walker = document.createTreeWalker(
+            element,
+            NodeFilter.SHOW_TEXT,
+            null
+        );
+
+        let node: Text | null;
+        while (node = walker.nextNode() as Text) {
+            const text = node.textContent || '';
+            
+            // 각 단어의 위치를 확인
+            const words = text.match(/\b[A-Za-z]+\b/g);
+            if (!words) continue;
+
+            let pos = 0;
+            for (const word of words) {
+                const wordStart = text.indexOf(word, pos);
+                if (wordStart === -1) continue;
+
+                range.setStart(node, wordStart);
+                range.setEnd(node, wordStart + word.length);
+                
+                const rect = range.getBoundingClientRect();
+                
+                // 클릭 위치가 단어 영역 내에 있는지 확인
+                if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                    event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                    
+                    // 단어를 span으로 감싸기
+                    const span = document.createElement('span');
+                    span.textContent = word;
+                    range.surroundContents(span);
+                    
+                    return {
+                        word: word,
+                        element: span
+                    };
+                }
+                
+                pos = wordStart + word.length;
+            }
+        }
+
+        return null;
     }
 }
 
