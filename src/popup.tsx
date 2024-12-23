@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import './styles.css';
 import { messages, Language } from './i18n/messages';
+import { Logger } from './logger';
+const logger = Logger.getInstance();
 
 interface Settings {
     usePanel: boolean;
@@ -90,29 +92,34 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleFullModeToggle = async () => {
-        const newValue = !settings.useFullMode;
-        setSettings({ ...settings, useFullMode: newValue });
-        await chrome.storage.sync.set({ useFullMode: newValue });
-        
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
-                type: 'UPDATE_SETTINGS',
-                settings: { ...settings, useFullMode: newValue }
-            });
+        try {
+            const newSettings = { ...settings, useFullMode: !settings.useFullMode };
+            setSettings(newSettings);
+            await chrome.storage.sync.set({ useFullMode: newSettings.useFullMode });
+            
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.id) {
+                const response = await chrome.tabs.sendMessage(tab.id, {
+                    type: 'UPDATE_SETTINGS',
+                    settings: newSettings
+                });
+                logger.log('popup', 'Full mode toggle response', response);
+            }
+        } catch (error) {
+            logger.log('popup', 'Error toggling full mode', error);
         }
     };
 
     const handleAudioFeatureToggle = async () => {
-        const newValue = !settings.useAudioFeature;
-        setSettings({ ...settings, useAudioFeature: newValue });
-        await chrome.storage.sync.set({ useAudioFeature: newValue });
+        const newSettings = { ...settings, useAudioFeature: !settings.useAudioFeature };
+        setSettings(newSettings);
+        await chrome.storage.sync.set({ useAudioFeature: newSettings.useAudioFeature });
         
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
+            await chrome.tabs.sendMessage(tab.id, {
                 type: 'UPDATE_SETTINGS',
-                settings: { ...settings, useAudioFeature: newValue }
+                settings: newSettings
             });
         }
     };
