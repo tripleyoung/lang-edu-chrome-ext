@@ -298,12 +298,6 @@ export class AudioService {
     }
 
     public addAudioButtonToElement(element: HTMLElement, text: string): void {
-        logger.log('audio', 'Adding audio button to element', {
-            text: text.substring(0, 50),
-            elementClass: element.className,
-            elementContent: element.textContent?.substring(0, 50)
-        });
-
         const container = document.createElement('span');
         container.className = 'translation-audio-container';
         container.style.cssText = `
@@ -317,23 +311,48 @@ export class AudioService {
 
         const button = document.createElement('button');
         button.className = 'translation-audio-button';
-        button.innerHTML = '윍';
+        button.innerHTML = `
+            <svg width="16" height="16" viewBox="0 0 32 32">
+                <circle
+                    cx="16"
+                    cy="16"
+                    r="15"
+                    fill="rgba(0, 0, 0, 0.7)"
+                    stroke="none"
+                />
+                <path
+                    d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
+                    fill="none"
+                    stroke="#ffffff"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                />
+            </svg>
+        `;
         button.style.cssText = `
             position: relative;
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
             background: none;
             border: none;
-            color: #4a9eff;
             cursor: pointer;
-            padding: 2px 4px;
+            padding: 2px;
             margin-left: 4px;
-            font-size: 14px;
-            opacity: 1;
+            opacity: 0.7;
             z-index: 1000;
             pointer-events: all;
             vertical-align: middle;
-            line-height: 1;
+            transition: opacity 0.2s;
         `;
+
+        // 호버 효과
+        button.addEventListener('mouseenter', () => {
+            button.style.opacity = '1';
+        });
+        button.addEventListener('mouseleave', () => {
+            button.style.opacity = '0.7';
+        });
 
         container.appendChild(textSpan);
         container.appendChild(button);
@@ -411,7 +430,7 @@ export class AudioService {
             }, 3000);
         }, 300);
 
-        // 마우스가 아���콘 위에 있을 때는 유지
+        // 마우스가 아이콘 위에 있을 때는 유지
         timerUI.addEventListener('mouseenter', () => {
             timerUI.style.opacity = '1';
         });
