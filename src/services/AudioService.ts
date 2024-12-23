@@ -22,21 +22,6 @@ export class AudioService {
     }
 
     addAudioButton(element: HTMLElement, text: string): void {
-        const container = document.createElement('span');
-        container.className = 'translation-audio-container';
-        container.style.cssText = `position: relative; display: inline;`;
-
-        const textSpan = document.createElement('span');
-        textSpan.textContent = text;
-        container.appendChild(textSpan);
-
-        const button = this.createAudioButton(text);
-        container.appendChild(button);
-
-        element.parentNode?.replaceChild(container, element);
-    }
-
-    private createAudioButton(text: string): HTMLButtonElement {
         const button = document.createElement('button');
         button.className = 'translation-audio-button';
         button.innerHTML = '🔊';
@@ -55,10 +40,13 @@ export class AudioService {
             transition: opacity 0.2s;
             z-index: 1000;
             pointer-events: auto;
+            display: inline-block;
+            vertical-align: middle;
+            margin-left: 4px;
         `;
 
         this.addAudioButtonListeners(button, text);
-        return button;
+        element.appendChild(button);
     }
 
     private async addAudioButtonListeners(button: HTMLButtonElement, text: string): Promise<void> {

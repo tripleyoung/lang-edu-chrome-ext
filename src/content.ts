@@ -24,6 +24,11 @@ export class TranslationExtension {
     public useAudioFeature: boolean = false;
     public useWordTooltip: boolean = false;
     public autoOpenPanel: boolean = false;
+    private isProcessing: boolean = false;
+    private cleanupHandlers: Set<() => void> = new Set();
+    private processingElement: HTMLElement | null = null;
+    private lastProcessedTime: number = 0;
+    private readonly PROCESS_DELAY = 500;
 
     constructor() {
         if (TranslationExtension.instance) {
@@ -39,6 +44,9 @@ export class TranslationExtension {
         this.fullModeService = new FullModeService(this.translationService);
 
         this.initialize();
+
+        // 페이지 언로드 시 클린업
+        window.addEventListener('unload', () => this.cleanup());
     }
         
     private async initialize(): Promise<void> {
@@ -63,7 +71,7 @@ export class TranslationExtension {
             // 이벤트 리스너 설정
             this.setupEventListeners();
 
-            // 설정 변경 리스너 추가
+            // 설정 변경 리스너 가
             chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (message.type === 'UPDATE_SETTINGS') {
                     // 비동기 처리를 위해 Promise를 반환
@@ -172,61 +180,83 @@ export class TranslationExtension {
     }
 
     private setupEventListeners(): void {
-        document.body.addEventListener('mouseover', this.handleMouseOver);
+        const handleMouseOver = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            
+            // 이미 처리된 요소는 건너뛰기
+            if (target.closest('.translation-tooltip') || 
+                target.closest('.translation-audio-container') ||
+                target.closest('.translation-inline-container')) {
+                return;
+            }
+
+            const textElement = this.findClosestTextElement(target);
+            if (!textElement) return;
+
+            // 디바운스 처리
+            if (this.debounceTimer) {
+                clearTimeout(this.debounceTimer);
+            }
+
+            this.debounceTimer = window.setTimeout(async () => {
+                try {
+                    const text = this.getElementText(textElement);
+                    if (!text || text.length < 2) return;
+
+                    // 단어 툴팁 모드
+                    if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
+                        await this.showWordTooltip(textElement, text.trim());
+                        return;
+                    }
+
+                    // 일반 툴팁 모드
+                    if (this.useTooltip) {
+                        await this.tooltipService.showTooltip(textElement, text);
+                    }
+
+                    // 패널 처리
+                    if (this.usePanel || this.autoOpenPanel) {
+                        await this.sendTranslationToPanel(text);
+                    }
+
+                } catch (error) {
+                    logger.log('content', 'Error in mouseenter handler', error);
+                }
+            }, this.debounceTime);
+        };
+
+        // 이벤트 리스너 등록
+        document.body.addEventListener('mouseover', handleMouseOver, { passive: true });
+
+        // 클린업 핸들러
+        this.cleanupHandlers.add(() => {
+            document.body.removeEventListener('mouseover', handleMouseOver);
+        });
     }
 
-    private handleMouseOver = async (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        const textElement = this.findClosestTextElement(target);
-        if (!textElement) return;
-
-        const text = this.getElementText(textElement);
-        if (!text || text.length < 2) return;
-
+    private cleanup(): void {
+        this.isProcessing = false;
+        this.processingElement = null;
+        
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
         }
 
-        this.debounceTimer = window.setTimeout(async () => {
-            try {
-                // 단어 툴팁 모드
-                if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
-                    await this.showWordTooltip(textElement, text.trim());
-                    return;
-                }
+        document.querySelectorAll('.translation-tooltip').forEach(el => el.remove());
+        this.cleanupHandlers.forEach(handler => handler());
+        this.cleanupHandlers.clear();
+    }
 
-                // 일반 툴팁 모드
-                if (this.useTooltip) {
-                    await this.tooltipService.showTooltip(textElement, text);
-                }
-
-                // 음성 기능
-                if (this.useAudioFeature) {
-                    this.audioService.addAudioButton(textElement, text);
-                }
-
-                // 패널 기능
-                if (this.usePanel || this.autoOpenPanel) {
-                    let translation = this.translationService.getCachedTranslation(text);
-                    if (!translation) {
-                        const sourceLang = await this.translationService.detectLanguage(text);
-                        const translatedText = await this.translationService.translateText(text, sourceLang);
-                        translation = {
-                            translation: translatedText,
-                            grammar: '',
-                            definition: '',
-                            words: [],
-                            idioms: []
-                        };
-                        this.translationService.setCachedTranslation(text, translation);
-                    }
-                    await this.sendTranslationToPanel(text);
-                }
-            } catch (error) {
-                logger.log('content', 'Error in mouseenter handler', error);
-            }
-        }, this.debounceTime);
-    };
+    // 대상 요소 유효성 검사를 위한 헬퍼 메서드
+    private isValidTarget(target: HTMLElement): boolean {
+        return !(
+            target.closest('.translation-tooltip') || 
+            target.hasAttribute('data-has-tooltip') ||
+            target.closest('.translation-audio-container') ||
+            target.closest('.translation-inline-container')
+        );
+    }
 
     private async createTranslationBar(): Promise<void> {
         try {
@@ -439,8 +469,6 @@ export class TranslationExtension {
             throw error;
         }
     }
-
-    // ... 나머지 메서드들 ...
 }
 
 // 초기화

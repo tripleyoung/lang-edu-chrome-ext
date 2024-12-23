@@ -9,6 +9,10 @@ export class TooltipService {
 
     async showTooltip(element: HTMLElement, text: string): Promise<void> {
         try {
+            if (element.closest('.translation-tooltip')) {
+                return;
+            }
+
             let translation = this.translationService.getCachedTranslation(text);
             if (!translation) {
                 const sourceLang = await this.translationService.detectLanguage(text);
@@ -34,20 +38,31 @@ export class TooltipService {
 
         if (element.hasAttribute('data-has-tooltip')) return;
 
+        const rect = element.getBoundingClientRect();
+
         const tooltipDiv = document.createElement('div');
         tooltipDiv.className = 'translation-tooltip';
         tooltipDiv.textContent = translation.translation;
 
         tooltipDiv.style.cssText = `
-            position: absolute;
-            left: ${element.getBoundingClientRect().left + window.scrollX}px;
-            top: ${element.getBoundingClientRect().bottom + window.scrollY}px;
+            position: fixed;
+            left: ${rect.left + window.scrollX}px;
+            top: ${rect.bottom + window.scrollY + 5}px;
             background-color: rgba(0, 0, 0, 0.9);
             color: white;
-            padding: 8px;
+            padding: 8px 12px;
             border-radius: 4px;
             z-index: 2147483647;
             font-size: 14px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.4;
+            max-width: 300px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(4px);
+            transition: opacity 0.2s ease;
         `;
 
         document.body.appendChild(tooltipDiv);
