@@ -105,8 +105,20 @@ export class AudioService {
 
             if (!selectedVoice) throw new Error(`No suitable voice found for ${langCode}`);
 
-            // 텍스트를 문장 단위로 분리
-            const sentences = textToSpeak.match(/[^.!?]+[.!?]+/g) || [textToSpeak];
+            // 구두점으로 끝나는 문장들 찾기
+            const completeSentences = textToSpeak.match(/[^.!?]+[.!?]+/g) || [];
+            
+            // 마지막 문장이 구두점 없이 끝나는지 확인
+            const lastPart = textToSpeak.replace(/.*[.!?]\s*/g, '').trim();
+            
+            // 최종 문장 배열 구성
+            const sentences = lastPart ? [...completeSentences, lastPart] : completeSentences;
+
+            logger.log('audio', 'Split sentences for speech', { 
+                completeSentences,
+                lastPart,
+                sentences 
+            });
             
             // 각 문장을 순차적으로 재생
             for (const sentence of sentences) {
@@ -182,7 +194,7 @@ export class AudioService {
         const rect = element.getBoundingClientRect();
         this.timerUI = this.createTimerUI(rect.left, rect.top);
 
-        // 클릭 이벤트 추가
+        // 클릭 ��벤트 추가
         this.timerUI.style.pointerEvents = 'auto';
         this.timerUI.style.cursor = 'pointer';
 
@@ -403,7 +415,6 @@ export class AudioService {
                     stroke-linejoin="round"
                 />
             </svg>
-            <div class="audio-tooltip">클릭하여 음성 재생</div>
         `;
         timerUI.style.cssText = `
             position: fixed;

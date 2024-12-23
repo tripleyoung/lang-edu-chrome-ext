@@ -159,55 +159,61 @@ export class FullModeService {
         setInterval(scanPage, 5000);
     }
 
-    private async translateBatch(nodes: Text[], count: number): Promise<void> {
-        for (const textNode of nodes) {
-            try {
-                if (!textNode.parentNode || !textNode.textContent) continue;
-                if (this.shouldSkipTextNode(textNode)) continue;
+    private async translateBatch(textNodes: Text[], startIndex: number): Promise<void> {
+        try {
+            const batchSize = 5;
+            const endIndex = Math.min(startIndex + batchSize, textNodes.length);
+            const currentBatch = textNodes.slice(startIndex, endIndex);
 
-                // 전체 텍스트를 가져옴
-                const fullText = textNode.textContent.trim();
-                if (!fullText || fullText.length < 2) continue;
+            await Promise.all(currentBatch.map(async (textNode) => {
+                try {
+                    const text = textNode.textContent?.trim() || '';
+                    if (!text) return;
 
-                // 이미 번역된 요소인지 확인
-                const existingContainer = textNode.parentElement?.closest('.translation-inline-container');
-                if (existingContainer) continue;
+                    // 구두점으로 끝나는 문장들 찾기
+                    const completeSentences = text.match(/[^.!?]+[.!?]+/g) || [];
+                    
+                    // 마지막 문장이 구두점 없이 끝나는지 확인
+                    const lastPart = text.replace(/.*[.!?]\s*/g, '').trim();
+                    
+                    // 최종 문장 배열 구성
+                    const sentences = lastPart ? [...completeSentences, lastPart] : completeSentences;
 
-                // 문장 단위로 분리하여 처리
-                const sentences = fullText.match(/[^.!?]+[.!?]+/g) || [fullText];
-                const translations = await Promise.all(
-                    sentences.map(async (sentence) => {
-                        const sourceLang = await this.translationService.detectLanguage(sentence.trim());
-                        return this.translationService.translateText(sentence.trim(), sourceLang);
-                    })
-                );
+                    logger.log('fullMode', 'Split sentences for translation', { 
+                        completeSentences,
+                        lastPart,
+                        sentences 
+                    });
 
-                // 부모 요소가 유효한지 확인
-                const parentElement = textNode.parentElement;
-                if (!parentElement || !document.contains(parentElement)) continue;
+                    const translations = await Promise.all(
+                        sentences.map(async (sentence) => {
+                            const sourceLang = await this.translationService.detectLanguage(sentence.trim());
+                            return this.translationService.translateText(sentence.trim(), sourceLang);
+                        })
+                    );
 
-                // 부모 요소의 스타일 가져오기
-                const computedStyle = window.getComputedStyle(parentElement);
-                const fontSize = computedStyle.fontSize;
-
-                // 모든 문장의 번역을 하나의 컨테이너에 표시
-                const container = document.createElement('span');
-                container.className = 'translation-inline-container';
-                container.innerHTML = `
-                    <span class="original" style="display: block; font-size: ${fontSize}; font-weight: 400; color: rgb(32, 34, 36);">${fullText}</span>
-                    <span class="translation" style="display: block; color: #2196F3; font-size: calc(${fontSize} * 0.9); font-style: italic; margin-top: 4px;">${translations.join(' ')}</span>
-                `;
-
-                if (textNode.parentNode) {
-                    textNode.parentNode.replaceChild(container, textNode);
-                    this.translationElements.add(container);
-                    count++;
+                    if (textNode.parentNode) {
+                        const container = document.createElement('span');
+                        container.className = 'translation-inline-container';
+                        container.innerHTML = `
+                            <span class="original">${text}</span>
+                            <span class="translation" style="color: #2196F3; font-size: 0.9em; display: block;">
+                                ${translations.join(' ')}
+                            </span>
+                        `;
+                        textNode.parentNode.replaceChild(container, textNode);
+                    }
+                } catch (error) {
+                    logger.log('fullMode', 'Error processing text node', { error });
                 }
+            }));
 
-                await new Promise(resolve => setTimeout(resolve, 50));
-            } catch (error) {
-                logger.log('fullMode', 'Error translating text node', { text: textNode.textContent, error });
+            // 다음 배치 처리
+            if (endIndex < textNodes.length && this.isTranslating) {
+                setTimeout(() => this.translateBatch(textNodes, endIndex), 100);
             }
+        } catch (error) {
+            logger.log('fullMode', 'Error in batch translation', error);
         }
     }
 
