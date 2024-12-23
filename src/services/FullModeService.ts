@@ -182,12 +182,20 @@ export class FullModeService {
                     })
                 );
 
+                // 부모 요소가 유효한지 확인
+                const parentElement = textNode.parentElement;
+                if (!parentElement || !document.contains(parentElement)) continue;
+
+                // 부모 요소의 스타일 가져오기
+                const computedStyle = window.getComputedStyle(parentElement);
+                const fontSize = computedStyle.fontSize;
+
                 // 모든 문장의 번역을 하나의 컨테이너에 표시
                 const container = document.createElement('span');
                 container.className = 'translation-inline-container';
                 container.innerHTML = `
-                    <span class="original" style="display: block; font-size: ${getComputedStyle(textNode.parentElement!).fontSize}; font-weight: 400; color: rgb(32, 34, 36);">${fullText}</span>
-                    <span class="translation" style="display: block; color: #2196F3; font-size: calc(${getComputedStyle(textNode.parentElement!).fontSize} * 0.9); font-style: italic; margin-top: 4px;">${translations.join(' ')}</span>
+                    <span class="original" style="display: block; font-size: ${fontSize}; font-weight: 400; color: rgb(32, 34, 36);">${fullText}</span>
+                    <span class="translation" style="display: block; color: #2196F3; font-size: calc(${fontSize} * 0.9); font-style: italic; margin-top: 4px;">${translations.join(' ')}</span>
                 `;
 
                 if (textNode.parentNode) {

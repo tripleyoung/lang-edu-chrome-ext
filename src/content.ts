@@ -157,7 +157,7 @@ export class TranslationExtension {
             {
                 acceptNode: (node) => {
                     const parent = node.parentElement;
-                    const text = node.textContent?.trim();
+                    let text = node.textContent?.trim();
 
                     // 부모 요소의 모든 상위 요소 확인
                     const hasHiddenParent = parent?.closest('[style*="display: none"]');
@@ -172,6 +172,15 @@ export class TranslationExtension {
                         parent.tagName === 'NOSCRIPT') {
                         logger.log('content', 'Rejected: Script/Style tag', { tag: parent.tagName, text });
                         return NodeFilter.FILTER_REJECT;
+                    }
+
+                    // 전체 모드에서는 original 클래스를 가진 요소의 텍스트를 사용
+                    const inlineContainer = parent.closest('.translation-inline-container');
+                    if (inlineContainer) {
+                        const originalText = inlineContainer.querySelector('.original')?.textContent;
+                        if (originalText) {
+                            text = originalText;
+                        }
                     }
                     
                     if (parent.closest('.translation-audio-container')) {
@@ -189,15 +198,6 @@ export class TranslationExtension {
                     if (!text || text.length <= 1 || /^\s*$/.test(text)) {
                         logger.log('content', 'Rejected: Too short or empty', { text });
                         return NodeFilter.FILTER_REJECT;
-                    }
-
-                    // BR 태그가 있는 경우 특별 처리
-                    if (parent.querySelector('br')) {
-                        const textContent = parent.textContent?.trim();
-                        if (!textContent || textContent.length <= 1) {
-                            logger.log('content', 'Rejected: Empty after BR processing', { text });
-                            return NodeFilter.FILTER_REJECT;
-                        }
                     }
 
                     logger.log('content', 'Accepted text node', { 
@@ -260,7 +260,7 @@ export class TranslationExtension {
             if (this.hasDirectText(target)) {
                 textElement = target;
             } 
-            // 2. P 태그인 경우 특별 처리
+            // 2. P 태그인 경우 특별 ���리
             else if (target.tagName === 'P') {
                 textElement = target;
             }
@@ -350,7 +350,7 @@ export class TranslationExtension {
                     await chrome.windows.get(TranslationExtension.panelWindow.id);
                     return;
                 } catch {
-                    // 패널이 존재하지 않으면 계속 진행
+                    // 패이 존재하지 않으면 계속 진행
                 }
             }
 
@@ -573,17 +573,34 @@ export class TranslationExtension {
                 {
                     acceptNode: (node) => {
                         const parent = node.parentElement;
-                        if (!parent || 
-                            parent.tagName === 'SCRIPT' || 
-                            parent.tagName === 'STYLE' || 
-                            parent.tagName === 'NOSCRIPT' ||
-                            parent.closest('.translation-inline-container') || // 이미 처리된 요소 제외
-                            getComputedStyle(parent).display === 'none' || 
-                            getComputedStyle(parent).visibility === 'hidden') {
+                        if (!parent) return NodeFilter.FILTER_REJECT;
+
+                        try {
+                            // 제외할 조건들 체크
+                            if (parent.tagName === 'SCRIPT' || 
+                                parent.tagName === 'STYLE' || 
+                                parent.tagName === 'NOSCRIPT' ||
+                                parent.closest('.translation-inline-container')) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+
+                            // 요소가 문서에 실제로 존재하는지 확인
+                            if (!document.contains(parent)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+
+                            // 숨겨진 요소 체크
+                            const style = window.getComputedStyle(parent);
+                            if (style.display === 'none' || style.visibility === 'hidden') {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+
+                            const text = node.textContent?.trim();
+                            return text && text.length > 1 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+                        } catch (error) {
+                            logger.log('fullMode', 'Error in acceptNode', { error });
                             return NodeFilter.FILTER_REJECT;
                         }
-                        const text = node.textContent?.trim();
-                        return text && text.length > 1 ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
                     }
                 }
             );
