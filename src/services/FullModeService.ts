@@ -227,6 +227,39 @@ export class FullModeService {
     }
 
     private async translateAllTextNodes(): Promise<void> {
+        // BR 태그 주변의 텍스트를 먼저 처리
+        const brElements = document.getElementsByTagName('br');
+        for (let i = 0; i < brElements.length; i++) {
+            const br = brElements[i];
+            
+            // 이전 텍스트 노드 처리
+            if (br.previousSibling?.nodeType === Node.TEXT_NODE) {
+                const textNode = br.previousSibling as Text;
+                if (!this.shouldSkipTextNode(textNode)) {
+                    const text = textNode.textContent?.trim();
+                    if (text && text.length > 1) {
+                        const span = document.createElement('span');
+                        span.textContent = text;
+                        textNode.parentNode?.replaceChild(span, textNode);
+                    }
+                }
+            }
+
+            // 다음 텍스트 노드 처리
+            if (br.nextSibling?.nodeType === Node.TEXT_NODE) {
+                const textNode = br.nextSibling as Text;
+                if (!this.shouldSkipTextNode(textNode)) {
+                    const text = textNode.textContent?.trim();
+                    if (text && text.length > 1) {
+                        const span = document.createElement('span');
+                        span.textContent = text;
+                        textNode.parentNode?.replaceChild(span, textNode);
+                    }
+                }
+            }
+        }
+
+        // 일반 텍스트 노드 처리
         const walker = document.createTreeWalker(
             document.body,
             NodeFilter.SHOW_TEXT,
@@ -376,7 +409,7 @@ export class FullModeService {
             parent.closest('.word-tooltip-permanent') ||
             parent.closest('.word-highlight-full') ||
             parent.closest('.tooltip-content') ||
-            parent.closest('form')) {  // form 전��를 제외
+            parent.closest('form')) {  // form 전를 제외
             return true;
         }
 
@@ -415,7 +448,7 @@ export class FullModeService {
         const scanAndTranslate = () => {
             if (!this.isTranslating) return;
 
-            // BR 태그 주변의 텍스트를 span으로 감싸서 처��
+            // BR 태그 주변의 텍스트를 span으로 감싸서 처리
             const brElements = document.getElementsByTagName('br');
             for (let i = 0; i < brElements.length; i++) {
                 const br = brElements[i];
