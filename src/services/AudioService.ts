@@ -82,6 +82,26 @@ export class AudioService {
             // 현재 재생 중인 음성 중지
             this.stopCurrentSpeech();
 
+            // 언어 설정 가져오기
+            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+            const nativeLang = settings.nativeLanguage || 'ko';
+            const learningLang = settings.learningLanguage || 'en';
+
+            // 텍스트가 모국어인 경우 학습언어로 번역
+            let textToSpeak = text;
+            let langToUse = lang;
+
+            if (lang === nativeLang) {
+                textToSpeak = await this.translationService.translateText(text, nativeLang);
+                langToUse = learningLang;
+                logger.log('audio', 'Text translated for speech', {
+                    originalText: text,
+                    translatedText: textToSpeak,
+                    fromLang: lang,
+                    toLang: langToUse
+                });
+            }
+
             // voices 로딩 확인
             const voicesLoaded = await this.ensureVoicesLoaded();
             if (!voicesLoaded) {
@@ -89,7 +109,7 @@ export class AudioService {
             }
 
             // 음성 합성 설정
-            const langCode = this.getLangCode(lang);
+            const langCode = this.getLangCode(langToUse);
             const voices = speechSynthesis.getVoices();
             const selectedVoice = voices.find(v => 
                 v.name.includes('Google') && 
@@ -101,15 +121,17 @@ export class AudioService {
             }
 
             logger.log('audio', 'Starting speech', {
-                text: text.substring(0, 50),
+                originalText: text,
+                textToSpeak,
+                originalLang: lang,
+                speechLang: langToUse,
                 voice: selectedVoice.name,
-                lang: selectedVoice.lang,
                 availableVoices: voices.length
             });
 
             // 음성 재생
             return new Promise<void>((resolve, reject) => {
-                const utterance = new SpeechSynthesisUtterance(text.trim());
+                const utterance = new SpeechSynthesisUtterance(textToSpeak.trim());
                 this.currentUtterance = utterance;
                 
                 utterance.voice = selectedVoice;
@@ -122,7 +144,9 @@ export class AudioService {
 
                 utterance.onstart = () => {
                     hasStarted = true;
-                    logger.log('audio', 'Speech started');
+                    logger.log('audio', 'Speech started', {
+                        text: textToSpeak.substring(0, 50)
+                    });
                 };
 
                 utterance.onend = () => {
@@ -139,7 +163,7 @@ export class AudioService {
                         hasStarted
                     });
 
-                    // 시작도 못했다면 사용자 상호작용이 필요할 수 있음
+                    // 시작도 못했면 사용자 상호작용이 필요할 수 있음
                     if (!hasStarted) {
                         logger.log('audio', 'Speech failed to start - might need user interaction');
                         this.showUserInteractionPrompt();
@@ -177,7 +201,7 @@ export class AudioService {
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             z-index: 2147483647;
         `;
-        prompt.textContent = '음성 재생을 위해 페이지를 클릭해주세요';
+        prompt.textContent = '음성 재생을 위해 페이지를 클릭주세요';
         document.body.appendChild(prompt);
         
         const removePrompt = () => {
@@ -189,7 +213,7 @@ export class AudioService {
         setTimeout(removePrompt, 5000);
     }
 
-    public startHoverTimer(element: HTMLElement, text: string): void {
+    public async startHoverTimer(element: HTMLElement, text: string): Promise<void> {
         // 이미 처리 중인 요소면 무시
         if (this.currentElement === element) return;
 
@@ -241,23 +265,15 @@ export class AudioService {
                 if (this.isPlaying) return;
                 this.isPlaying = true;
 
-                const [sourceLang, settings] = await Promise.all([
-                    this.translationService.detectLanguage(text),
-                    chrome.storage.sync.get(['nativeLanguage', 'learningLanguage'])
-                ]);
+                // 언어 감지 로직 개선
+                const sourceLang = await this.translationService.detectLanguage(text);
+                logger.log('audio', 'Language detected', {
+                    text: text.substring(0, 50),
+                    detectedLang: sourceLang
+                });
 
-                const nativeLang = settings.nativeLanguage || 'ko';
-                const learningLang = settings.learningLanguage || 'en';
-
-                let textToSpeak = text;
-                let langToUse = sourceLang;
-
-                if (sourceLang === nativeLang) {
-                    textToSpeak = await this.translationService.translateText(text, learningLang);
-                    langToUse = learningLang;
-                }
-
-                await this.playText(textToSpeak, langToUse);
+          
+                await this.playText(text, sourceLang);
             } catch (error) {
                 logger.log('audio', 'Error in timer click', error);
             } finally {
@@ -350,20 +366,14 @@ export class AudioService {
         button.addEventListener('click', async (e) => {
             e.stopPropagation();
             try {
+                // 언어 감지 로직 개선
                 const sourceLang = await this.translationService.detectLanguage(text);
-                const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
-                const nativeLang = settings.nativeLanguage || 'ko';
-                const learningLang = settings.learningLanguage || 'en';
+                logger.log('audio', 'Language detected', {
+                    text: text.substring(0, 50),
+                    detectedLang: sourceLang
+                });
 
-                let textToSpeak = text;
-                let langToUse = sourceLang;
-
-                if (sourceLang === nativeLang) {
-                    textToSpeak = await this.translationService.translateText(text, learningLang);
-                    langToUse = learningLang;
-                }
-
-                await this.playText(textToSpeak, langToUse);
+                await this.playText(text, sourceLang);
             } catch (error) {
                 logger.log('audio', 'Error playing audio', error);
             }
