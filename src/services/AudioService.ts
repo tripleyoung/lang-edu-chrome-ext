@@ -8,15 +8,21 @@ export class AudioService {
     private hoverTimer: number | null = null;
     private readonly HOVER_DELAY = 2000; // 2초 딜레이
     private timerUI: HTMLElement | null = null;
+    private isPlaying: boolean = false;  // 재생 상태 추적
+    private currentElement: HTMLElement | null = null;  // 현재 처리 중인 요소
 
     constructor(private translationService: TranslationService) {}
 
     public async initialize(): Promise<void> {
         if (this.isInitialized) return;
         
+        // voices가 로드될 때까지 대기
         if (window.speechSynthesis.getVoices().length === 0) {
             await new Promise<void>(resolve => {
-                window.speechSynthesis.onvoiceschanged = () => resolve();
+                window.speechSynthesis.onvoiceschanged = () => {
+                    window.speechSynthesis.onvoiceschanged = null;
+                    resolve();
+                };
             });
         }
         
@@ -24,9 +30,13 @@ export class AudioService {
     }
 
     public startHoverTimer(element: HTMLElement, text: string): void {
-        if (this.hoverTimer) {
-            clearTimeout(this.hoverTimer);
-        }
+        // 이미 처리 중인 요소면 무시
+        if (this.currentElement === element) return;
+
+        // 이전 타이머 정리
+        this.clearCurrentTimer();
+
+        this.currentElement = element;
 
         // 타이머 UI 생성
         const rect = element.getBoundingClientRect();
@@ -34,6 +44,9 @@ export class AudioService {
 
         this.hoverTimer = window.setTimeout(async () => {
             try {
+                if (this.isPlaying) return;  // 이미 재생 중이면 무시
+                this.isPlaying = true;
+
                 const sourceLang = await this.translationService.detectLanguage(text);
                 const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
                 const nativeLang = settings.nativeLanguage || 'ko';
@@ -51,23 +64,29 @@ export class AudioService {
             } catch (error) {
                 logger.log('audio', 'Error playing audio', error);
             } finally {
-                // 타이머 UI 제거
-                this.timerUI?.remove();
-                this.timerUI = null;
+                this.isPlaying = false;
+                this.clearCurrentTimer();
             }
         }, this.HOVER_DELAY);
 
         element.addEventListener('mouseleave', () => {
-            if (this.hoverTimer) {
-                clearTimeout(this.hoverTimer);
-                this.hoverTimer = null;
-            }
-            if (this.timerUI) {
-                this.timerUI.remove();
-                this.timerUI = null;
-            }
-            window.speechSynthesis.cancel();
+            this.clearCurrentTimer();
         }, { once: true });
+    }
+
+    private clearCurrentTimer(): void {
+        if (this.hoverTimer) {
+            clearTimeout(this.hoverTimer);
+            this.hoverTimer = null;
+        }
+        if (this.timerUI) {
+            this.timerUI.remove();
+            this.timerUI = null;
+        }
+        if (this.isPlaying) {
+            window.speechSynthesis.cancel();
+        }
+        this.currentElement = null;
     }
 
     public cleanup(): void {
@@ -76,39 +95,137 @@ export class AudioService {
     }
 
     async playText(text: string, lang: string): Promise<void> {
+        if (!text || text.trim().length === 0) return;
+
         try {
-            // 湲곗〈 쓬꽦 以묒
-            window.speechSynthesis.cancel();
+            // 기존 음성 중지 및 초기화
+            speechSynthesis.cancel();
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            // voices 濡쒕뵫 솗씤
-            await this.initialize();
+            // 언어 설정 가져오기
+            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+            const nativeLang = settings.nativeLanguage || 'ko';
+            const learningLang = settings.learningLanguage || 'en';
 
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = this.getLangCode(lang);
-            utterance.rate = 0.9;
-            utterance.pitch = 1.0;
-            utterance.volume = 1.0;
-
-            // 쓬꽦 꽑깮
-            const voices = window.speechSynthesis.getVoices();
-            const voice = voices.find(v => v.lang.startsWith(utterance.lang));
-            if (voice) {
-                utterance.voice = voice;
+            // 텍스트 언어가 모국어인 경우 학습 언어로 번역
+            let finalText = text;
+            let finalLang = lang;
+            
+            if (lang === nativeLang) {
+                finalText = await this.translationService.translateText(text, learningLang);
+                finalLang = learningLang;
+                logger.log('audio', 'Text translated', {
+                    from: text,
+                    to: finalText,
+                    fromLang: lang,
+                    toLang: finalLang
+                });
             }
 
-            // 쓬꽦 옱깮 떆옉
-            window.speechSynthesis.speak(utterance);
+            // 음성 합성 설정
+            const langCode = this.getLangCode(finalLang);
 
-            // 옱깮 셿猷 湲
-            return new Promise((resolve) => {
-                utterance.onend = () => resolve();
-                utterance.onerror = () => {
-                    logger.log('audio', 'Error playing audio');
-                    resolve();
+            // voices 초기화 및 대기
+            if (!this.isInitialized) {
+                await this.initialize();
+            }
+
+            // 음성 선택
+            const voices = speechSynthesis.getVoices();
+            const selectedVoice = voices.find(v => 
+                v.name.includes('Google') && 
+                v.lang.startsWith(langCode.split('-')[0])
+            );
+
+            if (!selectedVoice) {
+                logger.log('audio', 'No suitable voice found for', { langCode });
+                return;
+            }
+
+            logger.log('audio', 'Using voice', {
+                name: selectedVoice.name,
+                lang: selectedVoice.lang
+            });
+
+            // 음성 재생
+            return new Promise<void>((resolve) => {
+                const utterance = new SpeechSynthesisUtterance(finalText.trim());
+                utterance.voice = selectedVoice;
+                utterance.lang = selectedVoice.lang;
+                utterance.rate = 0.9;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+
+                let started = false;
+                let finished = false;
+                let retryCount = 0;
+                const maxRetries = 2;
+
+                const cleanup = () => {
+                    if (!finished) {
+                        finished = true;
+                        clearInterval(resumeInterval);
+                        resolve();
+                    }
                 };
+
+                const trySpeak = () => {
+                    if (retryCount >= maxRetries) {
+                        logger.log('audio', 'Max retries reached');
+                        cleanup();
+                        return;
+                    }
+
+                    retryCount++;
+                    logger.log('audio', 'Attempting speech', { attempt: retryCount });
+
+                    try {
+                        speechSynthesis.cancel();
+                        speechSynthesis.resume();
+                        speechSynthesis.speak(utterance);
+                    } catch (error) {
+                        logger.log('audio', 'Speak attempt failed', error);
+                        cleanup();
+                    }
+                };
+
+                utterance.onstart = () => {
+                    started = true;
+                    logger.log('audio', 'Speech started');
+                };
+
+                utterance.onend = () => {
+                    if (started) {
+                        logger.log('audio', 'Speech completed');
+                        cleanup();
+                    }
+                };
+
+                utterance.onerror = (event) => {
+                    logger.log('audio', 'Speech error', { attempt: retryCount, error: event });
+                    if (!started && !finished && retryCount < maxRetries) {
+                        setTimeout(trySpeak, 200);
+                    } else {
+                        cleanup();
+                    }
+                };
+
+                // Chrome 버그 해결을 위한 주기적인 resume 호출
+                const resumeInterval = setInterval(() => {
+                    if (!finished && speechSynthesis.speaking) {
+                        speechSynthesis.resume();
+                    }
+                }, 50);
+
+                // 5초 후 강제 종료
+                setTimeout(cleanup, 5000);
+
+                // 첫 시도 시작
+                trySpeak();
             });
         } catch (error) {
-            logger.log('audio', 'Error playing audio', error);
+            logger.log('audio', 'Error in playText', error);
+            speechSynthesis.cancel();
         }
     }
 
