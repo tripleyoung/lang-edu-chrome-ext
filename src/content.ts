@@ -3,6 +3,7 @@ import { TranslationService } from './services/TranslationService';
 import { AudioService } from './services/AudioService';
 import { TooltipService } from './services/TooltipService';
 import { FullModeService } from './services/FullModeService';
+import { WordTooltipService } from './services/WordTooltipService';
 
 const logger = Logger.getInstance();
 
@@ -14,6 +15,7 @@ export class TranslationExtension {
     private audioService!: AudioService;
     private tooltipService!: TooltipService;
     private fullModeService!: FullModeService;
+    private wordTooltipService!: WordTooltipService;
     
     private isEnabled: boolean = true;
     private debounceTimer: number | null = null;
@@ -42,6 +44,7 @@ export class TranslationExtension {
         this.tooltipService = TooltipService.getInstance(this.translationService);
         this.audioService = AudioService.getInstance(this.translationService);
         this.fullModeService = new FullModeService(this.translationService);
+        this.wordTooltipService = WordTooltipService.getInstance(this.translationService, this.audioService);
 
         this.initialize();
 
@@ -201,7 +204,7 @@ export class TranslationExtension {
                         return NodeFilter.FILTER_REJECT;
                     }
 
-                    // 전체 모드에서는 original 클래스를 가진 요소의 텍스트를 사용
+                    // 전체 모드에서는 original 클래스를 가진 요소의 텍스트 사용
                     const inlineContainer = parent.closest('.translation-inline-container');
                     if (inlineContainer) {
                         const originalText = inlineContainer.querySelector('.original')?.textContent;
@@ -322,9 +325,22 @@ export class TranslationExtension {
                     }
 
                     // 단어 툴팁 모드
-                    if (this.useWordTooltip && /^[A-Za-z]+$/.test(text.trim())) {
-                        await this.showWordTooltip(textElement!, text.trim());
-                        return;
+                    if (this.useWordTooltip) {
+                        const selectedText = window.getSelection()?.toString().trim();
+                        if (selectedText && /^[A-Za-z]+$/.test(selectedText)) {
+                            const word = selectedText;
+                            const context = this.getElementText(textElement!);
+                            await this.wordTooltipService.showWordTooltip(textElement!, word, context);
+                            return;
+                        }
+                        
+                        // 단일 단어 클릭 처리
+                        if (/^[A-Za-z]+$/.test(text.trim())) {
+                            const word = text.trim();
+                            const context = this.getElementText(textElement!);
+                            await this.wordTooltipService.showWordTooltip(textElement!, word, context);
+                            return;
+                        }
                     }
 
                     // 일반 툴팁 모드
