@@ -409,15 +409,28 @@ export class AudioService {
             cursor: pointer;
         `;
 
-        // 0.3초 후에 나타나게만 하고, 자동으로 사라지지 않도록 수정
-        setTimeout(() => {
-            timerUI.style.opacity = '1';
-        }, 300);
-
         // 마우스가 아이콘 위에 있을 때 스타일
-        timerUI.addEventListener('mouseenter', () => {
+        timerUI.addEventListener('mouseenter', async () => {
+            // 전체 모드 체크
+            const settings = await chrome.storage.sync.get(['translationMode']);
+            const isFullMode = settings.translationMode === 'full';
+            
+            // 전체 모드일 때는 TimerUI를 표시하지 않음
+            if (isFullMode) {
+                timerUI.remove();
+                return;
+            }
+
             timerUI.style.opacity = '1';
         });
+
+        // 0.3초 후에 나타나게만 하고, 자동으로 사라지지 않도록 수정
+        setTimeout(async () => {
+            const settings = await chrome.storage.sync.get(['translationMode']);
+            if (settings.translationMode !== 'full') {
+                timerUI.style.opacity = '1';
+            }
+        }, 300);
 
         return timerUI;
     }
