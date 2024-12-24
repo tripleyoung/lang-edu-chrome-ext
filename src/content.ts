@@ -304,11 +304,15 @@ export class TranslationExtension {
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             
-            // 이미 처리된 요소는 건너뛰기
+            // 툴팁 내부 요소들에 대한 이벤트는 즉시 중단
             if (target.closest('.translation-tooltip') || 
-                target.closest('.translation-audio-container') ||
-                target.closest('.translation-inline-container') ||
                 target.closest('.word-tooltip')) {
+                e.stopPropagation();  // 이벤트 전파 중단
+                return;
+            }
+
+            // 오디오 아이콘에 대한 이벤트는 계속 유지
+            if (target.closest('.audio-icon')) {
                 return;
             }
 
@@ -333,15 +337,33 @@ export class TranslationExtension {
                     if (this.useTooltip) {
                         await this.tooltipService.showTooltip(textElement!, text);
                     }
-
-                    // 패널 처리
-                    if (this.usePanel || this.autoOpenPanel) {
-                        await this.sendTranslationToPanel(text);
-                    }
                 } catch (error) {
                     logger.log('content', 'Error in mouseenter handler', error);
                 }
             }, this.debounceTime);
+        };
+
+        // 클릭 이벤트 핸들러
+        const handleClick = async (e: MouseEvent) => {
+            if (!this.useWordTooltip) return;
+            
+            const target = e.target as HTMLElement;
+            
+            // 툴팁이나 오디오 아이콘 클릭은 이벤트 전파만 중단
+            if (target.closest('.translation-tooltip') || 
+                target.closest('.word-tooltip') ||
+                target.closest('.audio-icon')) {
+                e.stopPropagation();
+                return;
+            }
+
+            const clickedWord = this.getWordAtPosition(target, e);
+            if (clickedWord) {
+                e.preventDefault();  // 기본 동작 중단
+                e.stopPropagation();  // 이벤트 전파 중단
+                const context = this.getElementText(target);
+                await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
+            }
         };
 
         // 이벤트 리스너 등록 (캡처링 페이즈 사용)
@@ -350,39 +372,14 @@ export class TranslationExtension {
             capture: true
         });
 
+        document.body.addEventListener('click', handleClick, {
+            capture: true  // 캡처링 페이즈에서 처리
+        });
+
         // 클린업 핸들러
         this.cleanupHandlers.add(() => {
             document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
-        });
-
-        // 클릭 이벤트 추가 (마우스오버 대신 클릭으로 변경)
-        document.body.addEventListener('click', async (e) => {
-            if (!this.useWordTooltip) return;
-            
-            const target = e.target as HTMLElement;
-            if (target.closest('.word-tooltip')) return;  // 툴팁 내부 클릭은 무시
-
-            // 이미 하이라이트된 단어를 클릭한 경우
-            if (target.classList.contains('word-highlight')) {
-                const word = target.textContent || '';
-                if (/^[A-Za-z]+$/.test(word)) {
-                    const context = this.getElementText(target.parentElement!);
-                    await this.wordTooltipService.showWordTooltip(target, word, context);
-                    e.stopPropagation();
-                    return;
-                }
-            }
-
-            const textElement = this.findClosestTextElement(target);
-            if (!textElement) return;
-
-            const clickedWord = this.getWordAtPosition(textElement, e);
-            if (clickedWord) {
-                const context = this.getElementText(textElement);
-                await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
-                e.stopPropagation();
-                return;
-            }
+            document.body.removeEventListener('click', handleClick, { capture: true });
         });
 
         // 설정 변경 메시지 리스너 추가
@@ -622,7 +619,7 @@ export class TranslationExtension {
             return textBlocks.join(' ');
         }
 
-        // 일반적인 텍스트 처리 - 모든 텍스트 노드의 내용을 합침
+        // 일반적인 텍스트 처��� - 모든 텍스트 노드의 내용을 합침
         return Array.from(element.childNodes)
             .filter(node => node.nodeType === Node.TEXT_NODE)
             .map(node => node.textContent?.trim())
