@@ -14,7 +14,6 @@ export class TooltipService {
 
     private constructor(private translationService: TranslationService) {
         window.addEventListener('scroll', () => this.removeTooltip(), { passive: true });
-        document.addEventListener('click', this.handleGlobalClick.bind(this));
         window.addEventListener('unload', () => this.cleanup());
         
         // mouseover 이벤트 리스너 제거
@@ -36,12 +35,7 @@ export class TooltipService {
         return TooltipService.instance;
     }
 
-    private handleGlobalClick(e: MouseEvent): void {
-        const target = e.target as HTMLElement;
-        if (!target.closest('.translation-tooltip')) {
-            this.removeTooltip();
-        }
-    }
+
 
     async showTooltip(element: HTMLElement, text: string): Promise<void> {
         try {

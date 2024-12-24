@@ -167,30 +167,6 @@ export class AudioService {
         }
     }
 
-    private showUserInteractionPrompt(): void {
-        const prompt = document.createElement('div');
-        prompt.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 2147483647;
-        `;
-        prompt.textContent = '음성 재생을 위해 페이지를 클릭주세요';
-        document.body.appendChild(prompt);
-        
-        const removePrompt = () => {
-            prompt.remove();
-            document.removeEventListener('click', removePrompt);
-        };
-        
-        document.addEventListener('click', removePrompt);
-        setTimeout(removePrompt, 5000);
-    }
-
     public async startHoverTimer(element: HTMLElement, text: string): Promise<void> {
         // 이미 처리 중인 요소면 무시
         if (this.currentElement === element) return;
@@ -437,7 +413,6 @@ export class AudioService {
 
     private setupAudioFeatures(): void {
         this.stopCurrentSpeech();
-        document.querySelectorAll('.audio-timer').forEach(el => el.remove());
     }
 
     public async enable(): Promise<void> {
