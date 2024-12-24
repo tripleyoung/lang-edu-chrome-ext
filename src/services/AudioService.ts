@@ -25,14 +25,22 @@ export class AudioService {
         
         try {
             // voices 초기화를 더 안정적으로 처리
-            await new Promise<void>((resolve) => {
+            await new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Voice initialization timeout'));
+                }, 3000);
+
                 const checkVoices = () => {
                     const voices = window.speechSynthesis.getVoices();
                     if (voices.length > 0) {
+                        clearTimeout(timeout);
+                        this.isInitialized = true;
                         resolve();
                     } else {
                         window.speechSynthesis.onvoiceschanged = () => {
                             window.speechSynthesis.onvoiceschanged = null;
+                            clearTimeout(timeout);
+                            this.isInitialized = true;
                             resolve();
                         };
                         window.speechSynthesis.getVoices();
@@ -41,11 +49,11 @@ export class AudioService {
                 checkVoices();
             });
 
-            this.isInitialized = true;
             logger.log('audio', 'AudioService initialized');
         } catch (error) {
             logger.log('audio', 'AudioService initialization failed', error);
             this.isInitialized = false;
+            throw error;
         }
     }
 
@@ -74,6 +82,10 @@ export class AudioService {
     }
 
     async playText(text: string, lang: string): Promise<void> {
+        if (!this.isInitialized) {
+            await this.initialize();
+        }
+
         if (!text || text.trim().length === 0) return;
 
         try {

@@ -80,6 +80,18 @@ export class WordTooltipService {
         }
     }
 
+    private async playWordAudio(word: string, sourceLang: string): Promise<void> {
+        try {
+            // AudioService 초기화 확인
+            await this.audioService.initialize();
+            
+            // 음성 재생
+            await this.audioService.playText(word, sourceLang);
+        } catch (error) {
+            logger.log('wordTooltip', 'Error playing word audio', { word, error });
+        }
+    }
+
     private createTooltip(word: string, translation: string, sourceLang: string): HTMLElement {
         const tooltip = document.createElement('div');
         tooltip.className = 'word-tooltip';
@@ -88,7 +100,8 @@ export class WordTooltipService {
                 <span class="translation">${translation}</span>
                 <div class="tooltip-controls">
                     <button class="audio-button" title="Play pronunciation">
-                        <svg width="14" height="14" viewBox="0 0 32 32">
+                        <svg width="20" height="20" viewBox="0 0 32 32">
+                            <circle cx="16" cy="16" r="14" fill="rgba(255,255,255,0.1)"/>
                             <path d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
                                 fill="none" stroke="currentColor" stroke-width="2"
                                 stroke-linecap="round" stroke-linejoin="round"/>
@@ -99,17 +112,48 @@ export class WordTooltipService {
             </div>
         `;
 
-        // 스타일 적용 - position 제거 (showWordTooltip에서 설정)
+        // 툴팁 스타일 개선
         tooltip.style.cssText = `
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.9);
             color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
             z-index: 2147483647;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             white-space: nowrap;
+            pointer-events: auto;
         `;
+
+        // 버튼 스타일 개선
+        tooltip.querySelectorAll('button').forEach(button => {
+            button.style.cssText = `
+                background: none;
+                border: none;
+                padding: 4px;
+                margin: 0 2px;
+                cursor: pointer;
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                opacity: 0.8;
+                transition: all 0.2s;
+                border-radius: 4px;
+                min-width: 28px;
+                min-height: 28px;
+            `;
+
+            // 호버 효과 추가
+            button.addEventListener('mouseenter', () => {
+                button.style.opacity = '1';
+                button.style.background = 'rgba(255,255,255,0.1)';
+            });
+            button.addEventListener('mouseleave', () => {
+                button.style.opacity = '0.8';
+                button.style.background = 'none';
+            });
+        });
 
         // 컨텐츠 스타일
         const content = tooltip.querySelector('.tooltip-content') as HTMLElement;
@@ -134,33 +178,13 @@ export class WordTooltipService {
             `;
         }
 
-        // 버튼 스타일
-        tooltip.querySelectorAll('button').forEach(button => {
-            button.style.cssText = `
-                background: none;
-                border: none;
-                padding: 2px;
-                cursor: pointer;
-                color: white;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                opacity: 0.7;
-                transition: opacity 0.2s;
-            `;
-        });
-
         // 이벤트 리스너 추가
         const audioButton = tooltip.querySelector('.audio-button') as HTMLButtonElement;
         const closeButton = tooltip.querySelector('.close-button') as HTMLButtonElement;
 
         audioButton.addEventListener('click', async (e) => {
             e.stopPropagation();
-            try {
-                await this.audioService.playText(word, sourceLang);
-            } catch (error) {
-                logger.log('wordTooltip', 'Error playing audio', { word, error });
-            }
+            await this.playWordAudio(word, sourceLang);
         });
 
         closeButton.addEventListener('click', (e) => {
@@ -187,6 +211,9 @@ export class WordTooltipService {
     }
 
     public enable(): void {
-        // 활성화 로직
+        // AudioService 초기화
+        this.audioService.initialize().catch(error => {
+            logger.log('wordTooltip', 'Failed to initialize audio service', error);
+        });
     }
 } 
