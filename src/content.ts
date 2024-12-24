@@ -580,7 +580,7 @@ export class TranslationExtension {
             const textBlocks: string[] = [];
             let currentBlock = '';
 
-            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 ���리
+            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 리
             element.childNodes.forEach(node => {
                 if (node.nodeType === Node.TEXT_NODE) {
                     const text = node.textContent?.trim();
@@ -808,6 +808,18 @@ export class TranslationExtension {
         this.useWordTooltip = newSettings.wordMode === 'tooltip';
         this.useAudioFeature = newSettings.useAudioFeature;
         this.autoOpenPanel = newSettings.autoOpenPanel;
+
+        // 새로운 모드 활성화
+        if (this.useFullMode) {
+            this.fullModeService.applyFullMode();
+        }
+        if (this.useTooltip) {
+            this.tooltipService.enable();  // TooltipService에 enable 메서드 필요
+        }
+        if (this.useWordTooltip) {
+            // 이벤트 리스너는 이미 setupEventListeners에서 설정되어 있음
+            // 필요한 경우 추가 초기화 수행
+        }
 
         logger.log('content', 'Settings updated', this.settings);
     }

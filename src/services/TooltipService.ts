@@ -10,6 +10,7 @@ export class TooltipService {
     private currentElement: HTMLElement | null = null;
     private isProcessing: boolean = false;
     private tooltipDebounceTimer: number | null = null;
+    private isEnabled: boolean = true;
 
     private constructor(private translationService: TranslationService) {
         window.addEventListener('scroll', () => this.removeTooltip(), { passive: true });
@@ -168,5 +169,16 @@ export class TooltipService {
 
     public cleanup(): void {
         this.removeTooltip();
+    }
+
+    public enable(): void {
+        // 이벤트 리스너는 이미 setupEventListeners에서 설정되어 있으므로
+        // 필요한 경우 추가 초기화만 수행
+        this.isEnabled = true;
+    }
+
+    public disable(): void {
+        this.isEnabled = false;
+        document.querySelectorAll('.translation-tooltip').forEach(el => el.remove());
     }
 } 
