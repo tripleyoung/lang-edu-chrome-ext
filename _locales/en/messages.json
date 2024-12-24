@@ -1,8 +1,11 @@
 {
     "extensionName": {
-        "message": "Language Learning Assistant"
+        "message": "Learn Any Page"
     },
     "extensionDescription": {
-        "message": "Chrome extension to help language learning on web pages"
+        "message": "Turn any webpage into learning material! Learn foreign languages from real content"
+    },
+    "extensionLongDescription": {
+        "message": "Transform all text around you into learning materials! A revolution in real-life language learning!!\n\nFeatures natural two-way translation between your native and target languages, text-to-speech, and word analysis tools"
     }
 }

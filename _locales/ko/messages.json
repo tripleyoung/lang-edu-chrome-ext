@@ -1,8 +1,11 @@
 {
     "extensionName": {
-        "message": "언어 학습 도우미"
+        "message": "Learn Any Page"
     },
     "extensionDescription": {
-        "message": "웹 페이지에서 언어 학습을 도와주는 확장 프로그램"
+        "message": "어떤 웹페이지도 학습 자료로! 실생활에서 배우는 외국어"
+    },
+    "extensionLongDescription": {
+        "message": "내 주변 모든 텍스트가 학습 자료로! 실생활 언어 학습 혁명!!\n\n학습언어와 모국어에대한 자연스러운 양방향 번역, 음성재생, 단어 분석기능 제공"
     }
 }

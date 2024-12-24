@@ -4,6 +4,9 @@
     "version": "1.0",
     "description": "__MSG_extensionDescription__",
     "default_locale": "ko",
+    "icons": {
+        "128": "icons/icon128.png"
+    },
     "permissions": [
         "activeTab",
         "storage",
@@ -40,6 +43,9 @@
     },
     "devtools_page": "devtools.html",
     "action": {
+        "default_icon": {
+            "128": "icons/icon128.png"
+        },
         "default_popup": "popup.html"
     },
     "content_scripts": [
