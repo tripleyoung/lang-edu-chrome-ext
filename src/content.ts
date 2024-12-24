@@ -627,7 +627,7 @@ export class TranslationExtension {
                                 return NodeFilter.FILTER_REJECT;
                             }
 
-                            // 숨겨진 요소 체크
+                            // 숨겨�� 요소 체크
                             const style = window.getComputedStyle(parent);
                             if (style.display === 'none' || style.visibility === 'hidden') {
                                 return NodeFilter.FILTER_REJECT;
@@ -686,66 +686,72 @@ export class TranslationExtension {
 
     // 클릭한 위치의 단어를 찾는 새로운 메서드
     private getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
-        const range = document.createRange();
-        
-        const walker = document.createTreeWalker(
-            element,
-            NodeFilter.SHOW_TEXT,
-            null
-        );
+        try {
+            // 기존 오버레이 제거
+            document.querySelectorAll('.word-highlight').forEach(el => el.remove());
 
-        let node: Text | null;
-        while (node = walker.nextNode() as Text) {
-            const text = node.textContent || '';
-            
-            // 영어와 한글 단어 모두 매칭
-            const words = text.match(/\b[A-Za-z]+\b|[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g);
-            if (!words) continue;
+            const range = document.createRange();
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null
+            );
 
-            let pos = 0;
-            for (const word of words) {
-                const wordStart = text.indexOf(word, pos);
-                if (wordStart === -1) continue;
-
-                range.setStart(node, wordStart);
-                range.setEnd(node, wordStart + word.length);
+            let node: Text | null;
+            while (node = walker.nextNode() as Text) {
+                const text = node.textContent || '';
                 
-                const rect = range.getBoundingClientRect();
-                
-                // 클릭 위치가 단어 영역 내에 있는지 확인
-                if (event.clientX >= rect.left && event.clientX <= rect.right &&
-                    event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                // 영어와 한글 단어 모두 매칭
+                const words = text.match(/\b[A-Za-z]+\b|[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g);
+                if (!words) continue;
+
+                let pos = 0;
+                for (const word of words) {
+                    const wordStart = text.indexOf(word, pos);
+                    if (wordStart === -1) continue;
+
+                    range.setStart(node, wordStart);
+                    range.setEnd(node, wordStart + word.length);
                     
-                    // 오버레이 생성 (원본 텍스트는 수정하지 않음)
-                    const overlay = document.createElement('span');
-                    overlay.className = 'word-highlight';
-                    overlay.textContent = word;
-                    overlay.style.cssText = `
-                        position: fixed;
-                        left: ${rect.left}px;
-                        top: ${rect.top}px;
-                        width: ${rect.width}px;
-                        height: ${rect.height}px;
-                        background-color: rgba(255, 255, 0, 0.3);
-                        pointer-events: none;
-                        z-index: 2147483646;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: ${getComputedStyle(element).fontSize};
-                        font-family: ${getComputedStyle(element).fontFamily};
-                    `;
+                    const rect = range.getBoundingClientRect();
                     
-                    document.body.appendChild(overlay);
+                    // 클릭 위치가 단어 영역 내에 있는지 확인
+                    if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                        event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                        
+                        // 오버레이 생성
+                        const overlay = document.createElement('span');
+                        overlay.className = 'word-highlight';
+                        overlay.textContent = word;
+                        overlay.style.cssText = `
+                            position: fixed;
+                            left: ${rect.left}px;
+                            top: ${rect.top}px;
+                            width: ${rect.width}px;
+                            height: ${rect.height}px;
+                            background-color: rgba(255, 255, 0, 0.3);
+                            pointer-events: none;
+                            z-index: 2147483646;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            font-size: ${getComputedStyle(element).fontSize};
+                            font-family: ${getComputedStyle(element).fontFamily};
+                        `;
+                        
+                        document.body.appendChild(overlay);
+                        
+                        return {
+                            word: word,
+                            element: overlay  // element 대신 overlay 반환
+                        };
+                    }
                     
-                    return {
-                        word: word,
-                        element: element  // 원본 요소 반환
-                    };
+                    pos = wordStart + word.length;
                 }
-                
-                pos = wordStart + word.length;
             }
+        } catch (error) {
+            logger.log('content', 'Error in getWordAtPosition', error);
         }
 
         return null;

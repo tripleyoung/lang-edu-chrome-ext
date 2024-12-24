@@ -52,19 +52,17 @@ export class WordTooltipService {
             // 단어 직접 번역 (문맥 번역 대신 단어 자체를 번역)
             const translation = await this.translationService.translateText(word, sourceLang);
 
-            // 오버레이된 단어 요소 찾기
-            const overlay = document.querySelector('.word-highlight') as HTMLElement;
-            if (!overlay) return;
-
             // 툴팁 생성 및 표시
             const tooltip = this.createTooltip(word, translation, sourceLang);
-            
-            // 오버레이 위치 기준으로 툴팁 위치 설정
-            const overlayRect = overlay.getBoundingClientRect();
+            tooltip.style.position = 'fixed';
             tooltip.style.visibility = 'hidden';
             document.body.appendChild(tooltip);
+
+            // element는 이미 오버레이 요소임
+            const overlayRect = element.getBoundingClientRect();
             const tooltipRect = tooltip.getBoundingClientRect();
-            
+
+            // viewport 기준으로 위치 설정
             tooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (tooltipRect.width / 2)}px`;
             tooltip.style.top = `${overlayRect.top - tooltipRect.height - 8}px`;
             tooltip.style.visibility = 'visible';
@@ -101,9 +99,8 @@ export class WordTooltipService {
             </div>
         `;
 
-        // 스타일 적용
+        // 스타일 적용 - position 제거 (showWordTooltip에서 설정)
         tooltip.style.cssText = `
-            position: absolute;
             background: rgba(0, 0, 0, 0.8);
             color: white;
             padding: 4px 8px;
@@ -114,7 +111,7 @@ export class WordTooltipService {
             white-space: nowrap;
         `;
 
-        // 컨텐츠 스��일
+        // 컨텐츠 스타일
         const content = tooltip.querySelector('.tooltip-content') as HTMLElement;
         if (content) {
             content.style.cssText = `
