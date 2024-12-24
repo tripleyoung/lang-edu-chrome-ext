@@ -427,8 +427,14 @@ export class AudioService {
         document.querySelectorAll('.audio-timer').forEach(el => el.remove());
     }
 
-    public enable(): void {
-        this.setupAudioFeatures();
+    public async enable(): Promise<void> {
+        try {
+            await this.initialize();
+            this.setupAudioFeatures();
+            logger.log('audio', 'AudioService enabled');
+        } catch (error) {
+            logger.log('audio', 'Failed to enable AudioService', error);
+        }
     }
 
   

@@ -54,6 +54,7 @@ export class TranslationExtension {
         }
 
         TranslationExtension.instance = this;
+        logger.log('content', 'Initializing TranslationExtension');
 
         // 서비스 초기화 순서 중요
         this.translationService = new TranslationService();
@@ -62,6 +63,7 @@ export class TranslationExtension {
         this.fullModeService = new FullModeService(this.translationService);
         this.wordTooltipService = WordTooltipService.getInstance(this.translationService, this.audioService);
 
+        logger.log('content', 'Services initialized');
         this.initialize();
 
         // 페이지 언로드 시 클린업
@@ -563,7 +565,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접인 텍스트 노드를 가지고 있는지 확인하는 퍼 메서드
+    // 직접인 텍스트 노드를 가지고 있는지 확���하는 퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {

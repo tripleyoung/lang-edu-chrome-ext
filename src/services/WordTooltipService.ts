@@ -14,6 +14,7 @@ export class WordTooltipService {
     private static instance: WordTooltipService | null = null;
     private currentTooltips: WordTooltip[] = [];
     private isProcessing: boolean = false;
+    private useWordTooltip: boolean = false;
 
     private constructor(
         private translationService: TranslationService,
@@ -82,11 +83,25 @@ export class WordTooltipService {
 
     private async playWordAudio(word: string, sourceLang: string): Promise<void> {
         try {
-            // AudioService 초기화 확인
+            // 설정 확인
+            const settings = await chrome.storage.sync.get(['useAudioFeature']);
+            if (!settings.useAudioFeature) {
+                logger.log('wordTooltip', 'Audio feature is disabled');
+                return;
+            }
+
+            // AudioService 초기화 및 재생
+            await this.audioService.enable();
             await this.audioService.initialize();
             
-            // 음성 재생
-            await this.audioService.playText(word, sourceLang);
+            // 언어 설정 가져오기
+            const langSettings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+            const learningLang = langSettings.learningLanguage || 'en';
+            
+            // 학습 언어로 음성 재생
+            await this.audioService.playText(word, learningLang);
+            
+            logger.log('wordTooltip', 'Playing word audio', { word, lang: learningLang });
         } catch (error) {
             logger.log('wordTooltip', 'Error playing word audio', { word, error });
         }
@@ -95,101 +110,77 @@ export class WordTooltipService {
     private createTooltip(word: string, translation: string, sourceLang: string): HTMLElement {
         const tooltip = document.createElement('div');
         tooltip.className = 'word-tooltip';
+        
+        // 버튼에 data-* 속성 추가
         tooltip.innerHTML = `
-            <div class="tooltip-content">
-                <span class="translation">${translation}</span>
-                <div class="tooltip-controls">
-                    <button class="audio-button" title="Play pronunciation">
-                        <svg width="20" height="20" viewBox="0 0 32 32">
+            <div class="tooltip-content" style="display: flex; align-items: center; gap: 4px;">
+                <span class="translation" style="margin-right: 4px;">${translation}</span>
+                <div class="tooltip-controls" style="display: flex; align-items: center;">
+                    <button type="button" data-action="play-audio" class="audio-button">
+                        <svg width="16" height="16" viewBox="0 0 32 32" style="display: block;">
                             <circle cx="16" cy="16" r="14" fill="rgba(255,255,255,0.1)"/>
                             <path d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
                                 fill="none" stroke="currentColor" stroke-width="2"
                                 stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
-                    <button class="close-button" title="Close">×</button>
+                    <button type="button" data-action="close" class="close-button" style="padding: 0 4px;">×</button>
                 </div>
             </div>
         `;
 
-        // 툴팁 스타일 개선
+        // 툴팁 스타일
         tooltip.style.cssText = `
+            position: fixed;
             background: rgba(0, 0, 0, 0.9);
             color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 14px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 13px;
             z-index: 2147483647;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
             white-space: nowrap;
-            pointer-events: auto;
+            pointer-events: all;
+            user-select: none;
         `;
 
-        // 버튼 스타일 개선
-        tooltip.querySelectorAll('button').forEach(button => {
-            button.style.cssText = `
+        // 버든 버튼에 대한 공통 스타일
+        const buttons = tooltip.querySelectorAll('button');
+        buttons.forEach(btn => {
+            btn.style.cssText = `
                 background: none;
                 border: none;
                 padding: 4px;
-                margin: 0 2px;
-                cursor: pointer;
+                margin: 0;
+                cursor: pointer !important;
                 color: white;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 opacity: 0.8;
-                transition: all 0.2s;
-                border-radius: 4px;
-                min-width: 28px;
-                min-height: 28px;
+                transition: opacity 0.2s;
+                pointer-events: all !important;
             `;
-
-            // 호버 효과 추가
-            button.addEventListener('mouseenter', () => {
-                button.style.opacity = '1';
-                button.style.background = 'rgba(255,255,255,0.1)';
-            });
-            button.addEventListener('mouseleave', () => {
-                button.style.opacity = '0.8';
-                button.style.background = 'none';
-            });
         });
 
-        // 컨텐츠 스타일
-        const content = tooltip.querySelector('.tooltip-content') as HTMLElement;
-        if (content) {
-            content.style.cssText = `
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                flex-direction: row;
-                white-space: nowrap;
-            `;
-        }
-
-        // 컨트롤 스타일
-        const controls = tooltip.querySelector('.tooltip-controls') as HTMLElement;
-        if (controls) {
-            controls.style.cssText = `
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                margin-left: 4px;
-            `;
-        }
-
-        // 이벤트 리스너 추가
-        const audioButton = tooltip.querySelector('.audio-button') as HTMLButtonElement;
-        const closeButton = tooltip.querySelector('.close-button') as HTMLButtonElement;
-
-        audioButton.addEventListener('click', async (e) => {
+        // 이벤트 위임을 사용한 버튼 클릭 처리
+        tooltip.addEventListener('click', async (e) => {
+            const target = e.target as HTMLElement;
+            const button = target.closest('button');
+            
+            if (!button) return;
+            
+            e.preventDefault();
             e.stopPropagation();
-            await this.playWordAudio(word, sourceLang);
-        });
 
-        closeButton.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.removeTooltips();
+            const action = button.getAttribute('data-action');
+            logger.log('wordTooltip', `Button clicked: ${action}`);
+
+            if (action === 'play-audio') {
+                await this.playWordAudio(word, sourceLang);
+            } else if (action === 'close') {
+                this.removeTooltips();
+            }
         });
 
         return tooltip;
@@ -215,5 +206,116 @@ export class WordTooltipService {
         this.audioService.initialize().catch(error => {
             logger.log('wordTooltip', 'Failed to initialize audio service', error);
         });
+
+        this.useWordTooltip = true;
+        
+        // 문서 전체에 대해 이벤트 리스너 설정
+        document.body.querySelectorAll('p, span, div').forEach(element => {
+            this.setupWordTooltipListeners(element as HTMLElement);
+        });
+
+        // 새로 추가되는 요소들을 위한 MutationObserver 설정
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        this.setupWordTooltipListeners(node as HTMLElement);
+                    }
+                });
+            });
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        logger.log('wordTooltip', 'Word tooltip service enabled');
+    }
+
+    private setupWordTooltipListeners(element: HTMLElement): void {
+        element.addEventListener('click', async (e) => {
+            logger.log('wordTooltip', 'Element clicked, checking for word');
+            
+            if (!this.useWordTooltip) {
+                logger.log('wordTooltip', 'Word tooltip is disabled');
+                return;
+            }
+            
+            const target = e.target as HTMLElement;
+            if (target.closest('.word-tooltip')) {
+                logger.log('wordTooltip', 'Clicked inside tooltip, ignoring');
+                return;
+            }
+
+            const clickedWord = this.getWordAtPosition(target, e);
+            if (clickedWord) {
+                logger.log('wordTooltip', 'Found word at position', { word: clickedWord.word });
+                const context = this.getElementText(target);
+                await this.showWordTooltip(clickedWord.element, clickedWord.word, context);
+                e.stopPropagation();
+            } else {
+                logger.log('wordTooltip', 'No word found at click position');
+            }
+        });
+    }
+
+    public getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
+        try {
+            const text = element.textContent || '';
+            const words = text.match(/\b\w+\b/g);
+            if (!words) return null;
+
+            const range = document.createRange();
+            let pos = 0;
+
+            for (const word of words) {
+                const wordStart = text.indexOf(word, pos);
+                if (wordStart === -1) continue;
+
+                range.setStart(element.firstChild!, wordStart);
+                range.setEnd(element.firstChild!, wordStart + word.length);
+
+                const rect = range.getBoundingClientRect();
+                if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                    event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                    
+                    const overlay = document.createElement('span');
+                    overlay.className = 'word-highlight';
+                    overlay.textContent = word;
+                    overlay.style.cssText = `
+                        position: fixed;
+                        left: ${rect.left}px;
+                        top: ${rect.top}px;
+                        width: ${rect.width}px;
+                        height: ${rect.height}px;
+                        background-color: rgba(255, 255, 0, 0.1);
+                        pointer-events: none;
+                        z-index: 2147483646;
+                    `;
+                    
+                    document.body.appendChild(overlay);
+                    return { word, element: overlay };
+                }
+                
+                pos = wordStart + word.length;
+            }
+        } catch (error) {
+            logger.log('wordTooltip', 'Error in getWordAtPosition', error);
+        }
+
+        return null;
+    }
+
+    private getElementText(element: HTMLElement): string {
+        return Array.from(element.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent?.trim())
+            .filter(text => text && text.length > 0)
+            .join(' ');
+    }
+
+    public setUseWordTooltip(value: boolean): void {
+        this.useWordTooltip = value;
     }
 } 
