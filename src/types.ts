@@ -86,6 +86,9 @@ export interface ExtensionState {
     useAudioFeature: boolean;
     nativeLanguage: string;
     learningLanguage: string;
+    defaultTranslationMode: 'none' | 'tooltip' | 'full';
+    defaultWordMode: 'none' | 'tooltip' | 'full';
+    defaultAudioFeature: boolean;
 }
 
 export interface TextGroup {

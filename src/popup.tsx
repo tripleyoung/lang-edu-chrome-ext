@@ -4,6 +4,7 @@ import './styles.css';
 import { messages, Language } from './i18n/messages';
 import { Logger } from './logger';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './components/ui/select';
+import { ExtensionState } from './types';
 const logger = Logger.getInstance();
 
 interface Settings {
@@ -15,6 +16,9 @@ interface Settings {
     useAudioFeature: boolean;
     nativeLanguage: string;
     learningLanguage: string;
+    defaultTranslationMode: 'none' | 'tooltip' | 'full';
+    defaultWordMode: 'none' | 'tooltip' | 'full';
+    defaultAudioFeature: boolean;
 }
 
 // 메시지 타입 정의
@@ -30,7 +34,10 @@ const PopupPanel: React.FC = () => {
         autoOpenPanel: false,
         useAudioFeature: false,
         nativeLanguage: 'ko',
-        learningLanguage: 'en'
+        learningLanguage: 'en',
+        defaultTranslationMode: 'none',
+        defaultWordMode: 'none',
+        defaultAudioFeature: false
     });
 
     const [language, setLanguage] = useState<Language>(settings.nativeLanguage as Language);
@@ -44,7 +51,10 @@ const PopupPanel: React.FC = () => {
             'autoOpenPanel',
             'useAudioFeature',
             'nativeLanguage',
-            'learningLanguage'
+            'learningLanguage',
+            'defaultTranslationMode',
+            'defaultWordMode',
+            'defaultAudioFeature'
         ], (result) => {
             setSettings({
                 enabled: result.enabled ?? false,
@@ -54,7 +64,10 @@ const PopupPanel: React.FC = () => {
                 autoOpenPanel: result.autoOpenPanel ?? false,
                 useAudioFeature: result.useAudioFeature ?? false,
                 nativeLanguage: result.nativeLanguage ?? 'ko',
-                learningLanguage: result.learningLanguage ?? 'en'
+                learningLanguage: result.learningLanguage ?? 'en',
+                defaultTranslationMode: result.defaultTranslationMode ?? 'none',
+                defaultWordMode: result.defaultWordMode ?? 'none',
+                defaultAudioFeature: result.defaultAudioFeature ?? false
             });
         });
     }, []);
@@ -199,10 +212,73 @@ const PopupPanel: React.FC = () => {
         handleSettingChange('translationMode', mode);
     };
 
+    const handleToggleEnabled = async () => {
+        const newEnabled = !settings.enabled;
+        const newSettings = {
+            ...settings,
+            enabled: newEnabled,
+            // 활성화 시 기본 설정 사용, 비활성화 시 모든 기능 끄기
+            translationMode: newEnabled ? settings.defaultTranslationMode : 'none',
+            wordMode: newEnabled ? settings.defaultWordMode : 'none',
+            useAudioFeature: newEnabled ? settings.defaultAudioFeature : false
+        } as ExtensionState;
+        
+        // 전체 설정을 한 번에 저장
+        await chrome.storage.sync.set(newSettings);
+        setSettings(newSettings);
+        
+        // 현재 탭 새로고침
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            // 설정 변경 메시지를 보내고 응답을 기다림
+            await new Promise<void>((resolve, reject) => {
+                chrome.tabs.sendMessage(
+                    tab.id!,
+                    { type: 'UPDATE_SETTINGS', settings: newSettings },
+                    (response) => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                        } else if (response?.success) {
+                            resolve();
+                        } else {
+                            reject(new Error('Failed to update settings'));
+                        }
+                    }
+                );
+            });
+            
+            // 설정이 적용된 후 리로드
+            await chrome.tabs.reload(tab.id);
+        }
+    };
+
     return (
         <div className="p-4 bg-gray-900 text-white min-w-[300px]">
             <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
             
+            {/* 확장 프로그램 활성화 토글 - 컴팩트한 버전 */}
+            <div className="mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={settings.enabled}
+                            onChange={handleToggleEnabled}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                    <span className="text-sm text-gray-300">
+                        {settings.enabled ? t('enabled') : t('disabled')}
+                    </span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-gray-400">
+                    <span>{t('shortcut')}:</span>
+                    <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">Alt+T</kbd>
+                </div>
+            </div>
+
+          
             {/* 번역 모드 섹션 */}
             <div className="space-y-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('translationMode')}</h3>
@@ -358,6 +434,48 @@ const PopupPanel: React.FC = () => {
                     </label>
                 </div>
             </div> */}
+
+            {/* 기본 모드 설정 섹션 */}
+            <div className="space-y-4 mb-6 border-t border-gray-700 pt-4">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('defaultSettings')}</h3>
+                <div className="space-y-3">
+                    <div>
+                        <label className="text-sm text-gray-400 block mb-1">{t('defaultTranslationMode')}</label>
+                        <select
+                            value={settings.defaultTranslationMode}
+                            onChange={(e) => handleSettingChange('defaultTranslationMode', e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded px-3 py-1 text-sm"
+                        >
+                            <option value="none">{t('noTranslation')}</option>
+                            <option value="tooltip">{t('tooltipMode')}</option>
+                            <option value="full">{t('fullMode')}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-sm text-gray-400 block mb-1">{t('defaultWordMode')}</label>
+                        <select
+                            value={settings.defaultWordMode}
+                            onChange={(e) => handleSettingChange('defaultWordMode', e.target.value)}
+                            className="w-full bg-gray-700 text-white rounded px-3 py-1 text-sm"
+                        >
+                            <option value="none">{t('noWordTranslation')}</option>
+                            <option value="tooltip">{t('wordTooltipMode')}</option>
+                        </select>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-400">{t('defaultAudioFeature')}</span>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={settings.defaultAudioFeature}
+                                onChange={(e) => handleSettingChange('defaultAudioFeature', e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };

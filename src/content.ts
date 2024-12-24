@@ -42,7 +42,10 @@ export class TranslationExtension {
         autoOpenPanel: false,
         useAudioFeature: false,
         nativeLanguage: 'ko',
-        learningLanguage: 'en'
+        learningLanguage: 'en',
+        defaultTranslationMode: 'none',
+        defaultWordMode: 'none',
+        defaultAudioFeature: false
     };
 
     constructor() {
@@ -87,8 +90,11 @@ export class TranslationExtension {
                 autoOpenPanel: settings.autoOpenPanel ?? false,
                 useAudioFeature: settings.useAudioFeature ?? false,
                 nativeLanguage: settings.nativeLanguage ?? 'ko',
-                learningLanguage: settings.learningLanguage ?? 'en'
-            };
+                learningLanguage: settings.learningLanguage ?? 'en',
+                defaultTranslationMode: settings.defaultTranslationMode ?? 'none',
+                defaultWordMode: settings.defaultWordMode ?? 'none',
+                defaultAudioFeature: settings.defaultAudioFeature ?? false
+            } as ExtensionState;
 
             // 기존 속성들과 동기화
             this.isEnabled = this.settings.enabled;
@@ -619,7 +625,7 @@ export class TranslationExtension {
             return textBlocks.join(' ');
         }
 
-        // 일반적인 텍스트 처��� - 모든 텍스트 노드의 내용을 합침
+        // 일반적인 텍스트 처리 - 모든 텍스트 노드의 내용을 합침
         return Array.from(element.childNodes)
             .filter(node => node.nodeType === Node.TEXT_NODE)
             .map(node => node.textContent?.trim())

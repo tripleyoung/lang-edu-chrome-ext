@@ -66,5 +66,13 @@
     ],
     "background": {
         "service_worker": "dist/background.js"
+    },
+    "commands": {
+        "toggle_extension": {
+            "suggested_key": {
+                "default": "Alt+T"
+            },
+            "description": "Toggle extension on/off"
+        }
     }
 }

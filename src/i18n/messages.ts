@@ -16,8 +16,8 @@ export const messages = {
         usePanel: '번역 패널 사용',
         useTooltip: '툴팁 모드',
         useFullMode: '전체 번역 모드',
-        enabled: '활성화',
-        disabled: '비활성화',
+        enabled: '활성화됨',
+        disabled: '비활성화됨',
         use: '사용',
         notUse: '미사용',
         useAudioFeature: '문장 발음 듣기',
@@ -26,7 +26,14 @@ export const messages = {
         wordMode: '단어 모드',
         noWordTranslation: '단어 번역 없음',
         wordTooltipMode: '단어 툴팁 모드',
-        wordFullMode: '전체 단어 보기'
+        wordFullMode: '전체 단어 보기',
+        extensionStatus: '확장 프로그램 상태',
+        shortcutGuide: '단축키로 빠르게 켜고 끄기:',
+        shortcut: '단축키',
+        defaultSettings: '기본 설정',
+        defaultTranslationMode: '기본 번역 모드',
+        defaultWordMode: '기본 단어 모드',
+        defaultAudioFeature: '기본 음성 재생'
     },
     en: {
         settings: 'Settings',
@@ -55,7 +62,14 @@ export const messages = {
         wordMode: 'Word Mode',
         noWordTranslation: 'No Word Translation',
         wordTooltipMode: 'Word Tooltip Mode',
-        wordFullMode: 'Show All Words'
+        wordFullMode: 'Show All Words',
+        extensionStatus: 'Extension Status',
+        shortcutGuide: 'Quick toggle shortcut:',
+        shortcut: 'Shortcut',
+        defaultSettings: 'Default Settings',
+        defaultTranslationMode: 'Default Translation Mode',
+        defaultWordMode: 'Default Word Mode',
+        defaultAudioFeature: 'Default Audio Feature'
     },
     ja: {
         settings: '設定',
@@ -84,7 +98,14 @@ export const messages = {
         wordMode: '単語モード',
         noWordTranslation: '単語翻訳なし',
         wordTooltipMode: '単語ツールチップモード',
-        wordFullMode: '全単語表示'
+        wordFullMode: '全単語表示',
+        extensionStatus: '拡張機能の状態',
+        shortcutGuide: 'ショートカットキー:',
+        shortcut: 'ショートカット',
+        defaultSettings: 'デフォルト設定',
+        defaultTranslationMode: 'デフォルト翻訳モード',
+        defaultWordMode: 'デフォルト単語モード',
+        defaultAudioFeature: 'デフォルト音声機能'
     },
     wordTooltipMode: {
         ko: '단어 툴팁 모드',
