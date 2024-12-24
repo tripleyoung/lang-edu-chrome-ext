@@ -849,30 +849,7 @@ export class TranslationExtension {
     }
 
     private setupPageObserver(): void {
-        // YouTube 전용 옵저버 설정
-        const youtubeObserver = new MutationObserver((mutations) => {
-            if (!this.isEnabled) return;
-
-            mutations.forEach(mutation => {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        const element = node as HTMLElement;
-                        if (element.matches('#content, #info-contents, #description, .ytd-comment-renderer')) {
-                            if (this.useFullMode) {
-                                this.fullModeService.applyFullMode();
-                            }
-                        }
-                    }
-                });
-            });
-        });
-
-        // YouTube 페이지 감시 시작
-        youtubeObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
+        
         // 일반 페이지용 옵저버
         this.observer = new MutationObserver((mutations) => {
             if (!this.isEnabled) return;

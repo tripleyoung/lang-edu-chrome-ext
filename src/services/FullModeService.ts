@@ -18,21 +18,17 @@ export class FullModeService {
             
             this.isTranslating = true;
             logger.log('fullMode', 'Starting full mode translation');
-
-            // YouTube 특정 요소들 처리
-            const youtubeElements = document.querySelectorAll(
-                '#content, #info-contents, #description, .ytd-comment-renderer'
-            );
             
-            for (const element of Array.from(youtubeElements)) {
-                await this.translateElement(element as HTMLElement);
-            }
+            // 기존 번역 제거
+            this.removeExistingTranslations();
 
             // 일반 텍스트 노드 처리
             await this.translateAllTextNodes();
             
             // 페이지 변경 감지 설정
             this.setupPageObserver();
+            
+            // 주기적 체크 시작
             this.startPeriodicCheck();
 
             logger.log('fullMode', 'Full mode applied successfully');
@@ -40,24 +36,6 @@ export class FullModeService {
             this.isTranslating = false;
             logger.log('fullMode', 'Error applying full mode', error);
             throw error;
-        }
-    }
-
-    private async translateElement(element: HTMLElement): Promise<void> {
-        const walker = document.createTreeWalker(
-            element,
-            NodeFilter.SHOW_TEXT,
-            { acceptNode: (node) => this.filterTextNode(node) }
-        );
-
-        const textNodes: Text[] = [];
-        let node;
-        while ((node = walker.nextNode()) !== null) {
-            textNodes.push(node as Text);
-        }
-
-        if (textNodes.length > 0) {
-            await this.translateBatch(textNodes, 0);
         }
     }
 
@@ -94,7 +72,7 @@ export class FullModeService {
 
                     if (validNodes.length > 0) {
                         await this.translateBatch(validNodes, 0);
-                        // 각 ���치 사이에 짧은 딜레이
+                        // 각 배치 사이에 짧은 딜레이
                         await new Promise(resolve => setTimeout(resolve, 50));
                     }
                 }
@@ -196,7 +174,7 @@ export class FullModeService {
                     // 구두점으로 끝나는 문장들 찾기
                     const completeSentences = text.match(/[^.!?]+[.!?]+/g) || [];
                     
-                    // 마지막 문장이 구두점 없이 끝는지 확인
+                    // 마지�� 문장이 구두점 없이 끝는지 확인
                     const lastPart = text.replace(/.*[.!?]\s*/g, '').trim();
                     
                     // 최종 문장 배열 구성
