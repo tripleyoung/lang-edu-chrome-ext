@@ -348,7 +348,7 @@ export class TranslationExtension {
             if (!textElement) return;
 
             const clickedWord = this.getWordAtPosition(textElement, e);
-            if (clickedWord && /^[A-Za-z]+$/.test(clickedWord.word)) {
+            if (clickedWord) {
                 const context = this.getElementText(textElement);
                 await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
                 e.stopPropagation();
@@ -699,8 +699,8 @@ export class TranslationExtension {
         while (node = walker.nextNode() as Text) {
             const text = node.textContent || '';
             
-            // 각 단어의 위치를 확인
-            const words = text.match(/\b[A-Za-z]+\b/g);
+            // 영어와 한글 단어 모두 매칭하도록 정규식 수정
+            const words = text.match(/\b[A-Za-z]+\b|[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g);
             if (!words) continue;
 
             let pos = 0;

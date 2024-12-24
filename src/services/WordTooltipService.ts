@@ -40,32 +40,69 @@ export class WordTooltipService {
 
             // 설정 가져오기
             const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
-            const targetLang = settings.nativeLanguage || 'ko';  // 번역될 언어 (기본값: 한국어)
-            const sourceLang = settings.learningLanguage || 'en'; // 원본 언어 (기본값: 영어)
+            const nativeLang = settings.nativeLanguage || 'ko';
+            const learningLang = settings.learningLanguage || 'en';
+
+            // 단어의 언어 감지
+            const sourceLang = await this.translationService.detectLanguage(word);
+            logger.log('wordTooltip', 'Language detection result', { 
+                word,
+                sourceLang,
+                nativeLang,
+                learningLang
+            });
 
             let translation = '';
 
             try {
+                // 모국어인 경우 학습 언어로 번역, 그 외의 경우 모국어로 번역
+                const targetLang = sourceLang === nativeLang ? learningLang : nativeLang;
+                logger.log('wordTooltip', 'Translation direction', { 
+                    sourceLang,
+                    targetLang,
+                    word,
+                    context: context.substring(0, 50) // 문맥의 일부만 로깅
+                });
+
                 // 1. 문맥에서 단어 번역 시도
                 const contextTranslation = await this.translationService.translateText(context, sourceLang);
+                logger.log('wordTooltip', 'Context translation result', { 
+                    contextTranslation,
+                    words: context.toLowerCase().split(/\s+/),
+                    translations: contextTranslation.split(/\s+/)
+                });
+
                 const words = context.toLowerCase().split(/\s+/);
                 const translations = contextTranslation.split(/\s+/);
                 const wordIndex = words.indexOf(word.toLowerCase());
 
                 if (wordIndex >= 0 && wordIndex < translations.length) {
-                    // 문맥에서 찾은 번역
                     translation = translations[wordIndex];
+                    logger.log('wordTooltip', 'Found translation in context', { 
+                        word,
+                        translation,
+                        wordIndex
+                    });
                 } else {
                     // 단어 자체 번역
                     translation = await this.translationService.translateText(word, sourceLang);
+                    logger.log('wordTooltip', 'Direct word translation', { 
+                        word,
+                        translation
+                    });
                 }
             } catch (error) {
-                // 번역 실패 시 단어 자체 번역 시도
+                logger.log('wordTooltip', 'Error in translation process', { 
+                    word,
+                    sourceLang,
+                    error
+                });
+                // 번역 실패 시 단어 자체 번역
                 translation = await this.translationService.translateText(word, sourceLang);
             }
 
-            // 2. 툴팁 생성 및 표시
-            const tooltip = this.createTooltip(word, translation);
+            // 툴팁 생성 및 표시
+            const tooltip = this.createTooltip(word, translation, sourceLang);
             const rect = element.getBoundingClientRect();
             
             // 툴팁 위치 계산 (단어 위에 중앙 정렬)
@@ -85,13 +122,13 @@ export class WordTooltipService {
             });
 
         } catch (error) {
-            logger.log('wordTooltip', 'Error showing word tooltip', { word, error });
+            logger.log('wordTooltip', 'Error showing word tooltip', error);
         } finally {
             this.isProcessing = false;
         }
     }
 
-    private createTooltip(word: string, translation: string): HTMLElement {
+    private createTooltip(word: string, translation: string, sourceLang: string): HTMLElement {
         const tooltip = document.createElement('div');
         tooltip.className = 'word-tooltip';
         tooltip.innerHTML = `
@@ -123,7 +160,7 @@ export class WordTooltipService {
             white-space: nowrap;
         `;
 
-        // 컨텐츠 스타일
+        // 컨텐츠 스��일
         const content = tooltip.querySelector('.tooltip-content') as HTMLElement;
         if (content) {
             content.style.cssText = `
@@ -169,7 +206,7 @@ export class WordTooltipService {
         audioButton.addEventListener('click', async (e) => {
             e.stopPropagation();
             try {
-                await this.audioService.playText(word, 'en');
+                await this.audioService.playText(word, sourceLang);
             } catch (error) {
                 logger.log('wordTooltip', 'Error playing audio', { word, error });
             }
