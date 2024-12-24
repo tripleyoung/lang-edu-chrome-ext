@@ -84,7 +84,7 @@ export class WordTooltipService {
     private async playWordAudio(word: string, sourceLang: string): Promise<void> {
         try {
             // 설정 확인
-            const settings = await chrome.storage.sync.get(['useAudioFeature']);
+            const settings = await chrome.storage.sync.get(['useAudioFeature', 'nativeLanguage', 'learningLanguage']);
             if (!settings.useAudioFeature) {
                 logger.log('wordTooltip', 'Audio feature is disabled');
                 return;
@@ -94,14 +94,23 @@ export class WordTooltipService {
             await this.audioService.enable();
             await this.audioService.initialize();
             
-            // 언어 설정 가져오기
-            const langSettings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
-            const learningLang = langSettings.learningLanguage || 'en';
+            // 원본 언어가 학습 언어면 그대로 재생, 아니면 번역 후 재생
+            const learningLang = settings.learningLanguage || 'en';
+            const nativeLang = settings.nativeLanguage || 'ko';
             
-            // 학습 언어로 음성 재생
-            await this.audioService.playText(word, learningLang);
+            if (sourceLang === learningLang) {
+                await this.audioService.playText(word, learningLang);
+            } else {
+                // 학습 언어로 번역 후 재생
+                const translation = await this.translationService.translateText(word, sourceLang);
+                await this.audioService.playText(translation, learningLang);
+            }
             
-            logger.log('wordTooltip', 'Playing word audio', { word, lang: learningLang });
+            logger.log('wordTooltip', 'Playing word audio', { 
+                word, 
+                sourceLang,
+                targetLang: learningLang 
+            });
         } catch (error) {
             logger.log('wordTooltip', 'Error playing word audio', { word, error });
         }
