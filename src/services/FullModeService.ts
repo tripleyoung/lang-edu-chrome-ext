@@ -16,8 +16,14 @@ export class FullModeService {
             this.isTranslating = true;
             logger.log('fullMode', 'Starting full mode translation');
             
-            // 기존 번역 제거
-            this.removeExistingTranslations();
+            // 기존 번역만 제거 (단어 툴팁은 유지)
+            document.querySelectorAll('.translation-inline-container').forEach(el => {
+                const text = el.querySelector('.original')?.textContent || el.textContent;
+                if (text) {
+                    const textNode = document.createTextNode(text);
+                    el.parentNode?.replaceChild(textNode, el);
+                }
+            });
 
             // 일반 텍스트 노드 처리
             await this.translateAllTextNodes();
