@@ -315,7 +315,7 @@ export class TranslationExtension {
             }, this.debounceTime);
         };
 
-        // 이벤트 리스너 등록 (캡처링 페이즈 사용)
+        // 이벤트 리스너 등록 (캡처링 페이즈 사���)
         document.body.addEventListener('mouseover', handleMouseOver, { 
             passive: true,
             capture: true
@@ -627,7 +627,7 @@ export class TranslationExtension {
                                 return NodeFilter.FILTER_REJECT;
                             }
 
-                            // 숨겨�� 요소 체크
+                            // 숨겨 요소 체크
                             const style = window.getComputedStyle(parent);
                             if (style.display === 'none' || style.visibility === 'hidden') {
                                 return NodeFilter.FILTER_REJECT;
@@ -715,7 +715,6 @@ export class TranslationExtension {
                     
                     const rect = range.getBoundingClientRect();
                     
-                    // 클릭 위치가 단어 영역 내에 있는지 확인
                     if (event.clientX >= rect.left && event.clientX <= rect.right &&
                         event.clientY >= rect.top && event.clientY <= rect.bottom) {
                         
@@ -729,7 +728,7 @@ export class TranslationExtension {
                             top: ${rect.top}px;
                             width: ${rect.width}px;
                             height: ${rect.height}px;
-                            background-color: rgba(255, 255, 0, 0.3);
+                            background-color: rgba(255, 255, 0, 0.1);
                             pointer-events: none;
                             z-index: 2147483646;
                             display: flex;
@@ -737,13 +736,15 @@ export class TranslationExtension {
                             justify-content: center;
                             font-size: ${getComputedStyle(element).fontSize};
                             font-family: ${getComputedStyle(element).fontFamily};
+                            color: transparent;
+                            user-select: none;
                         `;
                         
                         document.body.appendChild(overlay);
                         
                         return {
                             word: word,
-                            element: overlay  // element 대신 overlay 반환
+                            element: overlay
                         };
                     }
                     
