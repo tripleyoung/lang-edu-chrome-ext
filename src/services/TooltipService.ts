@@ -17,16 +17,16 @@ export class TooltipService {
         document.addEventListener('click', this.handleGlobalClick.bind(this));
         window.addEventListener('unload', () => this.cleanup());
         
-        // 전역 mouseover 이벤트로 툴팁 제거 처리
-        document.addEventListener('mouseover', (e) => {
-            const target = e.target as HTMLElement;
-            if (this.currentTooltip && 
-                !this.currentTooltip.contains(target) && 
-                !this.currentElement?.contains(target) &&
-                !target.closest('.translation-tooltip')) {
-                this.removeTooltip();
-            }
-        });
+        // mouseover 이벤트 리스너 제거
+        // document.addEventListener('mouseover', (e) => {
+        //     const target = e.target as HTMLElement;
+        //     if (this.currentTooltip && 
+        //         !this.currentTooltip.contains(target) && 
+        //         !this.currentElement?.contains(target) &&
+        //         !target.closest('.translation-tooltip')) {
+        //         this.removeTooltip();
+        //     }
+        // });
     }
 
     public static getInstance(translationService: TranslationService): TooltipService {
@@ -157,13 +157,11 @@ export class TooltipService {
             this.tooltipDebounceTimer = null;
         }
 
+        // 이전 툴팁이 있으면 즉시 제거
         if (this.currentTooltip) {
-            this.currentTooltip.style.opacity = '0';
-            setTimeout(() => {
-                this.currentTooltip?.remove();
-                this.currentTooltip = null;
-                this.currentElement = null;
-            }, 150);
+            this.currentTooltip.remove();
+            this.currentTooltip = null;
+            this.currentElement = null;
         }
     }
 
