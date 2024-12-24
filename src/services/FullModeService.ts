@@ -49,89 +49,65 @@ export class FullModeService {
     }
 
     private setupPageObserver(): void {
-        let processingTimeout: number | null = null;
-        const pendingNodes = new Set<Text>();
-        let isProcessing = false;
+        if (this.observer) {
+            this.observer.disconnect();
+        }
 
-        const processNodes = async () => {
-            if (!this.isTranslating || pendingNodes.size === 0 || isProcessing) return;
-
-            try {
-                isProcessing = true;
-                const nodesToProcess = Array.from(pendingNodes);
-                pendingNodes.clear();
-
-                // 배치 처리
-                const batchSize = 5;
-                for (let i = 0; i < nodesToProcess.length; i += batchSize) {
-                    const batch = nodesToProcess.slice(i, i + batchSize);
-                    const validNodes = batch.filter(node => 
-                        node.isConnected && 
-                        this.filterTextNode(node) === NodeFilter.FILTER_ACCEPT
-                    );
-
-                    if (validNodes.length > 0) {
-                        await this.translateBatch(validNodes, 0);
-                        // 각 배치 사이에 짧은 딜레이
-                        await new Promise(resolve => setTimeout(resolve, 50));
-                    }
-                }
-            } finally {
-                isProcessing = false;
-                // 처리 중에 새로 추가된 노드가 있다면 다시 처리
-                if (pendingNodes.size > 0) {
-                    processingTimeout = window.setTimeout(() => {
-                        processNodes();
-                    }, 100) as unknown as number;
-                }
-            }
-        };
-
-        const addNodeForProcessing = (node: Text) => {
-            if (node.isConnected && this.filterTextNode(node) === NodeFilter.FILTER_ACCEPT) {
-                pendingNodes.add(node);
-                if (processingTimeout) {
-                    clearTimeout(processingTimeout);
-                }
-                processingTimeout = window.setTimeout(() => {
-                    processNodes();
-                }, 100) as unknown as number;
-            }
-        };
-
-        // MutationObserver 설정
         this.observer = new MutationObserver((mutations) => {
             if (!this.isTranslating) return;
 
+            let shouldTranslate = false;
+            const newTextNodes: Text[] = [];
+
             mutations.forEach(mutation => {
-                if (mutation.type === 'characterData' && 
-                    mutation.target.nodeType === Node.TEXT_NODE) {
-                    addNodeForProcessing(mutation.target as Text);
+                // 1. 직접적인 텍스트 노드 변경 감지
+                if (mutation.type === 'characterData') {
+                    const textNode = mutation.target as Text;
+                    if (this.filterTextNode(textNode) === NodeFilter.FILTER_ACCEPT) {
+                        newTextNodes.push(textNode);
+                    }
                 }
 
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach(node => {
-                        if (node.nodeType === Node.TEXT_NODE) {
-                            addNodeForProcessing(node as Text);
-                        } else if (node.nodeType === Node.ELEMENT_NODE) {
-                            // 새로 추가된 요소의 모든 텍스트 노드 처리
-                            const walker = document.createTreeWalker(
-                                node,
-                                NodeFilter.SHOW_TEXT,
-                                null
-                            );
+                // 2. DOM 구조 변경 감지
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        // 새로 추가된 요소 내의 모든 텍스트 노드 수집
+                        const walker = document.createTreeWalker(
+                            node,
+                            NodeFilter.SHOW_TEXT,
+                            { acceptNode: (n) => this.filterTextNode(n) }
+                        );
 
-                            let textNode: Text | null;
-                            while ((textNode = walker.nextNode() as Text | null) !== null) {
-                                addNodeForProcessing(textNode);
-                            }
+                        let textNode;
+                        while ((textNode = walker.nextNode())) {
+                            newTextNodes.push(textNode as Text);
                         }
-                    });
-                }
+                        shouldTranslate = true;
+                    } else if (node.nodeType === Node.TEXT_NODE) {
+                        if (this.filterTextNode(node) === NodeFilter.FILTER_ACCEPT) {
+                            newTextNodes.push(node as Text);
+                            shouldTranslate = true;
+                        }
+                    }
+                });
             });
+
+            if (shouldTranslate && newTextNodes.length > 0) {
+                logger.log('fullMode', 'New content detected', {
+                    nodesCount: newTextNodes.length,
+                    mutations: mutations.length
+                });
+                
+                // 약간의 지연을 두어 DOM이 완전히 로드되도록 함
+                setTimeout(() => {
+                    this.translateBatch(newTextNodes, 0).catch(error => {
+                        logger.log('fullMode', 'Error translating new content', error);
+                    });
+                }, 100);
+            }
         });
 
-        // 옵저버 설정 강화
+        // 더 세밀한 변경 감지를 위한 옵션
         this.observer.observe(document.body, {
             childList: true,
             subtree: true,
@@ -139,25 +115,8 @@ export class FullModeService {
             characterDataOldValue: true
         });
 
-        // 초기 페이지 스캔
-        const scanPage = () => {
-            const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                null
-            );
-
-            let textNode: Text | null;
-            while ((textNode = walker.nextNode() as Text | null) !== null) {
-                addNodeForProcessing(textNode);
-            }
-        };
-
-        // 초기 스캔 실행
-        scanPage();
-
-        // 주기적으로 페이지 재스캔 (동적 콘텐츠 대응)
-        setInterval(scanPage, 5000);
+        // 초기 스캔 수행
+        this.scanForMissedContent();
     }
 
     private async translateBatch(textNodes: Text[], startIndex: number): Promise<void> {
@@ -174,7 +133,7 @@ export class FullModeService {
                     // 구두점으로 끝나는 문장들 찾기
                     const completeSentences = text.match(/[^.!?]+[.!?]+/g) || [];
                     
-                    // 마지�� 문장이 구두점 없이 끝는지 확인
+                    // 마지막 문장이 구두점 없이 끝는지 확인
                     const lastPart = text.replace(/.*[.!?]\s*/g, '').trim();
                     
                     // 최종 문장 배열 구성
@@ -420,6 +379,34 @@ export class FullModeService {
             this.translationElements.add(container);
         } catch (error) {
             logger.log('fullMode', 'Error processing text element', error);
+        }
+    }
+
+    // 놓친 컨텐츠를 찾아서 번역
+    private scanForMissedContent(): void {
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            { acceptNode: (node) => this.filterTextNode(node) }
+        );
+
+        const missedNodes: Text[] = [];
+        let node;
+        while ((node = walker.nextNode())) {
+            const textNode = node as Text;
+            const parent = textNode.parentElement;
+            
+            // 이미 번역된 컨텐츠가 아닌 경우에만 추가
+            if (parent && !parent.closest('.translation-inline-container')) {
+                missedNodes.push(textNode);
+            }
+        }
+
+        if (missedNodes.length > 0) {
+            logger.log('fullMode', 'Found missed content', { count: missedNodes.length });
+            this.translateBatch(missedNodes, 0).catch(error => {
+                logger.log('fullMode', 'Error translating missed content', error);
+            });
         }
     }
 } 
