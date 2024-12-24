@@ -72,6 +72,15 @@ export class TranslationExtension {
         
     private async initialize(): Promise<void> {
         try {
+            // 페이지가 완전히 로드될 때까지 대기
+            if (document.readyState !== 'complete') {
+                await new Promise<void>((resolve) => {
+                    window.addEventListener('load', () => resolve());
+                });
+            }
+
+            logger.log('content', 'Page fully loaded, initializing extension');
+
             // 새로운 설정 로드
             const settings = await chrome.storage.sync.get([
                 'enabled',
@@ -988,4 +997,16 @@ export class TranslationExtension {
 }
 
 // 초기화
+document.addEventListener('DOMContentLoaded', () => {
+    // DOMContentLoaded 이후에도 동적 로딩이 있을 수 있으므로
+    // load 이벤트까지 기다림
+    if (document.readyState === 'complete') {
         new TranslationExtension();
+    } else {
+        window.addEventListener('load', () => {
+            new TranslationExtension();
+        });
+    }
+
+    logger.log('content', 'Waiting for page to fully load');
+});
