@@ -152,10 +152,20 @@ const PopupPanel: React.FC = () => {
 
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
-                type: 'UPDATE_SETTINGS',
-                settings: newSettings
-            });
+            // 모드 변경 시 페이지 리로드
+            if (key === 'translationMode' || key === 'wordMode') {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: 'UPDATE_SETTINGS',
+                    settings: newSettings
+                }, () => {
+                    chrome.tabs.reload(tab.id!);
+                });
+            } else {
+                chrome.tabs.sendMessage(tab.id, {
+                    type: 'UPDATE_SETTINGS',
+                    settings: newSettings
+                });
+            }
         }
     };
 

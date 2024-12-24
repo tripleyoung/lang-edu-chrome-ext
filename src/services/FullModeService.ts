@@ -267,6 +267,7 @@ export class FullModeService {
                 parent.closest('.word-tooltip') ||
                 parent.closest('.word-tooltip-permanent') ||
                 parent.closest('.word-highlight-full') ||
+                parent.closest('.word-highlight') ||
                 parent.closest('.tooltip-content') ||
                 parent.closest('form') ||
                 parent.querySelector('.translation-inline-container')) {
