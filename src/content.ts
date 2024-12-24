@@ -146,6 +146,9 @@ export class TranslationExtension {
                 }
             });
 
+            // 페이지 텍스트 노드 감시 시작
+            this.setupContentObserver();
+
             // 기능 초기화
             if (this.useFullMode) {
                 await this.fullModeService.applyFullMode();
@@ -190,7 +193,7 @@ export class TranslationExtension {
                 }
             }
 
-            // 음성 기능 상태 변경 시
+            // 성 기능 상태 변경 시
             if (this.useAudioFeature !== prevAudioFeature) {
                 if (this.useAudioFeature) {
                     this.processTextElements();
@@ -565,7 +568,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접인 텍스트 노드를 가지고 있는지 확���하는 퍼 메서드
+    // 직접인 텍스트 노드를 가지고 있는지 확인하는 퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {
@@ -896,6 +899,92 @@ export class TranslationExtension {
             }
         });
     }
+
+    private setupContentObserver(): void {
+        if (this.observer) {
+            this.observer.disconnect();
+        }
+
+        this.observer = new MutationObserver((mutations) => {
+            if (!this.isEnabled) return;
+
+            mutations.forEach(mutation => {
+                // 1. 텍스트 노드 변경 감지
+                if (mutation.type === 'characterData') {
+                    const textNode = mutation.target as Text;
+                    if (this.isValidTextNode(textNode)) {
+                        // this.handleTextNode(textNode);
+                    }
+                }
+
+                // 2. DOM 구조 변경 감지
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const walker = document.createTreeWalker(
+                            node,
+                            NodeFilter.SHOW_TEXT,
+                            { 
+                                acceptNode: (node) => {
+                                    return this.isValidTextNode(node as Text) ? 
+                                        NodeFilter.FILTER_ACCEPT : 
+                                        NodeFilter.FILTER_REJECT;
+                                }
+                            }
+                        );
+
+                        let textNode;
+                        while ((textNode = walker.nextNode())) {
+                            // this.handleTextNode(textNode as Text);
+                        }
+                    }
+                });
+            });
+        });
+
+        this.observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        logger.log('content', 'Content observer setup complete');
+    }
+
+    private isValidTextNode(node: Text): boolean {
+        const text = node.textContent?.trim();
+        if (!text || text.length < 2) return false;
+
+        const parent = node.parentElement;
+        if (!parent) return false;
+
+        // 이미 처리된 노드 제외
+        if (parent.closest('.translation-inline-container, .translation-audio-container, .word-tooltip')) {
+            return false;
+        }
+
+        // 숨겨진 요소 제외
+        const style = window.getComputedStyle(parent);
+        if (style.display === 'none' || style.visibility === 'hidden') {
+            return false;
+        }
+
+        return true;
+    }
+
+    // private handleTextNode(node: Text): void {
+    //     if (this.useFullMode) {
+    //         this.fullModeService.processTextNode(node);
+    //     }
+    //     if (this.useTooltip) {
+    //         this.tooltipService.setupTooltipForNode(node);
+    //     }
+    //     if (this.useWordTooltip) {
+    //         this.wordTooltipService.setupTooltipForNode(node);
+    //     }
+    //     if (this.useAudioFeature && node.parentElement) {
+    //         this.audioService.addAudioButton(node.parentElement, node.textContent || '');
+    //     }
+    // }
 }
 
 // 초기화

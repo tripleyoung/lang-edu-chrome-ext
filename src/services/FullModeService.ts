@@ -71,7 +71,7 @@ export class FullModeService {
                 // 2. DOM 구조 변경 감지
                 mutation.addedNodes.forEach(node => {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        // 새로 추가된 요소 내의 모든 텍스트 노드 수집
+                        // ��로 추가된 요소 내의 모든 텍스트 노드 수집
                         const walker = document.createTreeWalker(
                             node,
                             NodeFilter.SHOW_TEXT,
@@ -306,14 +306,14 @@ export class FullModeService {
         }
     }
 
-    private async processTextNode(textNode: Text): Promise<void> {
+    public async processTextNode(node: Text): Promise<void> {
         try {
-            if (this.filterTextNode(textNode) === NodeFilter.FILTER_REJECT) return;
+            if (this.filterTextNode(node) === NodeFilter.FILTER_REJECT) return;
 
-            const text = textNode.textContent?.trim() || '';
+            const text = node.textContent?.trim() || '';
             if (!text || text.length < 2) return;
 
-            const batch = [textNode];
+            const batch = [node];
             await this.translateBatch(batch, 0);
         } catch (error) {
             logger.log('fullMode', 'Error processing text node', error);
