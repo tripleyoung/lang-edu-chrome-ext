@@ -61,9 +61,7 @@ export class FullModeService {
                     const batch = nodesToProcess.slice(i, i + batchSize);
                     const validNodes = batch.filter(node => 
                         node.isConnected && 
-                        !this.shouldSkipTextNode(node) &&
-                        node.textContent?.trim().length &&
-                        node.textContent?.trim().length > 1
+                        this.filterTextNode(node) === NodeFilter.FILTER_ACCEPT
                     );
 
                     if (validNodes.length > 0) {
@@ -84,7 +82,7 @@ export class FullModeService {
         };
 
         const addNodeForProcessing = (node: Text) => {
-            if (node.isConnected && !this.shouldSkipTextNode(node)) {
+            if (node.isConnected && this.filterTextNode(node) === NodeFilter.FILTER_ACCEPT) {
                 pendingNodes.add(node);
                 if (processingTimeout) {
                     clearTimeout(processingTimeout);
@@ -263,75 +261,46 @@ export class FullModeService {
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
 
-        // 이미 번역된 요소는 건너뛰기
-        if (parent.closest('.translation-inline-container')) {
+        try {
+            // 1. 이미 번역된 요소나 툴팁 체크
+            if (parent.closest('.translation-inline-container') ||
+                parent.closest('.word-tooltip') ||
+                parent.closest('.word-tooltip-permanent') ||
+                parent.closest('.word-highlight-full') ||
+                parent.closest('.tooltip-content') ||
+                parent.closest('form') ||
+                parent.querySelector('.translation-inline-container')) {
+                return NodeFilter.FILTER_REJECT;
+            }
+
+            // 2. form 관련 요소와 무시할 태그들 체크
+            const ignoredTags = [
+                'SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE',
+                'INPUT', 'TEXTAREA', 'SELECT', 'BUTTON',
+                'FIELDSET', 'LEGEND'
+            ];
+
+            let currentElement: HTMLElement | null = parent;
+            while (currentElement) {
+                if (ignoredTags.includes(currentElement.tagName) ||
+                    getComputedStyle(currentElement).display === 'none' || 
+                    getComputedStyle(currentElement).visibility === 'hidden') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                currentElement = currentElement.parentElement;
+            }
+
+            // 3. 텍스트 내용 체크
+            const text = node.textContent?.trim();
+            if (!text || text.length <= 1) {
+                return NodeFilter.FILTER_REJECT;
+            }
+
+            return NodeFilter.FILTER_ACCEPT;
+        } catch (error) {
+            logger.log('fullMode', 'Error in filterTextNode', error);
             return NodeFilter.FILTER_REJECT;
         }
-
-        const text = node.textContent?.trim();
-        if (!text || text.length <= 1) {
-            return NodeFilter.FILTER_REJECT;
-        }
-
-        // 무시할 태그들
-        const ignoredTags = ['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE', 'TEXTAREA', 'INPUT'];
-        if (ignoredTags.includes(parent.tagName) ||
-            getComputedStyle(parent).display === 'none' || 
-            getComputedStyle(parent).visibility === 'hidden') {
-            return NodeFilter.FILTER_REJECT;
-        }
-
-        // 번역 대상이 될 수 있는 일반적인 컨테이너들
-        const validContainers = [
-            'P', 'DIV', 'SPAN', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
-            'LI', 'TD', 'TH', 'CAPTION', 'LABEL', 'FIGCAPTION',
-            'ARTICLE', 'SECTION', 'MAIN', 'ASIDE', 'BLOCKQUOTE',
-            'HEADER', 'FOOTER', 'NAV', 'DETAILS', 'SUMMARY'
-        ];
-
-        // 번역 대상이 될 수 있는 클래스나 속성들
-        const validAttributes = [
-            'article', 'content', 'text', 'description', 'body',
-            'title', 'heading', 'paragraph', 'news', 'post',
-            'story', 'message', 'comment'
-        ];
-
-        // BR 변 텍스트 처리
-        const isBRContext = 
-            parent.tagName === 'BR' || 
-            Array.from(parent.childNodes).some(child => 
-                child.nodeType === Node.ELEMENT_NODE && 
-                (child as HTMLElement).tagName === 'BR'
-            ) ||
-            parent.previousSibling?.nodeType === Node.ELEMENT_NODE && 
-            (parent.previousSibling as HTMLElement).tagName === 'BR' ||
-            parent.nextSibling?.nodeType === Node.ELEMENT_NODE && 
-            (parent.nextSibling as HTMLElement).tagName === 'BR';
-
-        if (isBRContext) {
-            return NodeFilter.FILTER_ACCEPT;
-        }
-
-        // 유효한 컨테이너 태그 체크
-        if (validContainers.includes(parent.tagName)) {
-            return NodeFilter.FILTER_ACCEPT;
-        }
-
-        // 유효한 속성이나 클래스 체크
-        const classAndId = `${parent.className} ${parent.id}`.toLowerCase();
-        if (validAttributes.some(attr => classAndId.includes(attr))) {
-            return NodeFilter.FILTER_ACCEPT;
-        }
-
-        // 부모 요소들 중에 article이나 content 관련 요소가 있는지 체크
-        const hasValidParent = parent.closest(validContainers.join(',')) !== null ||
-            parent.closest('[class*="article"],[class*="content"],[class*="text"],[class*="body"]') !== null;
-
-        if (hasValidParent) {
-            return NodeFilter.FILTER_ACCEPT;
-        }
-
-        return NodeFilter.FILTER_REJECT;
     }
 
     public disableFullMode(): void {
@@ -351,7 +320,7 @@ export class FullModeService {
 
     private async processTextNode(textNode: Text): Promise<void> {
         try {
-            if (this.shouldSkipTextNode(textNode)) return;
+            if (this.filterTextNode(textNode) === NodeFilter.FILTER_REJECT) return;
 
             const text = textNode.textContent?.trim() || '';
             if (!text || text.length < 2) return;
@@ -361,23 +330,6 @@ export class FullModeService {
         } catch (error) {
             logger.log('fullMode', 'Error processing text node', error);
         }
-    }
-
-    private shouldSkipTextNode(node: Text): boolean {
-        const parent = node.parentElement;
-        if (!parent) return true;
-
-        return this.shouldSkipElement(parent) || 
-               parent.closest('.translation-inline-container') !== null ||
-               parent.querySelector('.translation-inline-container') !== null;
-    }
-
-    private shouldSkipElement(element: HTMLElement): boolean {
-        return element.tagName === 'SCRIPT' ||
-            element.tagName === 'STYLE' ||
-            element.tagName === 'NOSCRIPT' ||
-            getComputedStyle(element).display === 'none' ||
-            getComputedStyle(element).visibility === 'hidden';
     }
 
     private startPeriodicCheck(): void {
@@ -393,19 +345,7 @@ export class FullModeService {
                 document.body,
                 NodeFilter.SHOW_TEXT,
                 {
-                    acceptNode: (node) => {
-                        const text = node.textContent?.trim();
-                        if (!text || text.length <= 1) return NodeFilter.FILTER_REJECT;
-
-                        const parent = node.parentElement;
-                        if (!parent || 
-                            parent.closest('.translation-inline-container') ||
-                            ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) {
-                            return NodeFilter.FILTER_REJECT;
-                        }
-
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
+                    acceptNode: (node) => this.filterTextNode(node)
                 }
             );
 
