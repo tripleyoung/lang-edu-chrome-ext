@@ -324,7 +324,7 @@ export class TranslationExtension {
                     const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
 
-                    // 음성 생��� 모드
+                    // 음성 생성 모드
                     if (this.useAudioFeature) {
                         this.audioService.startHoverTimer(textElement!, text);
                     }
@@ -658,7 +658,7 @@ export class TranslationExtension {
                                 return NodeFilter.FILTER_REJECT;
                             }
 
-                            // 요소가 문서에 실제로 존재하는지 ���인
+                            // 요소가 문서에 실제로 존재하는지 확인
                             if (!document.contains(parent)) {
                                 return NodeFilter.FILTER_REJECT;
                             }
@@ -795,7 +795,7 @@ export class TranslationExtension {
     }
 
     // 설정 업데이트 핸들러 수정
-    private handleSettingsUpdate(newSettings: ExtensionState): void {
+    private async handleSettingsUpdate(newSettings: ExtensionState): Promise<void> {
         // 이전 상태 저장
         const prevFullMode = this.useFullMode;
         const prevWordTooltip = this.useWordTooltip;
@@ -814,21 +814,25 @@ export class TranslationExtension {
         this.cleanup();  // 기존 리스너 제거
         this.setupEventListeners();  // 새로운 리스너 설정
 
-        // 새로운 모드 활성화
-        if (this.useFullMode) {
-            this.fullModeService.applyFullMode();
-        }
-        if (this.useTooltip) {
-            this.tooltipService.enable();
-        }
+        try {
+            // 새로운 모드 활성화 (await 추가)
+            if (this.useFullMode) {
+                await this.fullModeService.applyFullMode();
+            }
+            if (this.useTooltip) {
+                this.tooltipService.enable();
+            }
 
-        // 페이지 옵저버 재설정
-        if (this.observer) {
-            this.observer.disconnect();
-        }
-        this.setupPageObserver();
+            // 페이지 옵저버 재설정
+            if (this.observer) {
+                this.observer.disconnect();
+            }
+            this.setupPageObserver();
 
-        logger.log('content', 'Settings updated', this.settings);
+            logger.log('content', 'Settings updated successfully', this.settings);
+        } catch (error) {
+            logger.log('content', 'Error updating settings', error);
+        }
     }
 
     private updateUI(): void {
