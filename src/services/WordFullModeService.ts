@@ -67,7 +67,8 @@ export class WordFullModeService {
                     }
 
                     // 단어 번역 및 래퍼 추가
-                    const translation = await this.translationService.translateText(word);
+                    const sourceLang = await this.translationService.detectLanguage(word);
+                    const translation = await this.translationService.translateText(word, sourceLang);
                     fragments.push(`
                         <span class="word-with-translation">
                             ${word}
@@ -100,14 +101,14 @@ export class WordFullModeService {
                 // 마우스 오버 이벤트 추가
                 container.querySelectorAll('.word-with-translation').forEach(wordEl => {
                     wordEl.addEventListener('mouseenter', () => {
-                        const meaning = wordEl.querySelector('.word-meaning');
+                        const meaning = wordEl.querySelector('.word-meaning') as HTMLElement;
                         if (meaning) {
                             meaning.style.display = 'block';
                         }
                     });
 
                     wordEl.addEventListener('mouseleave', () => {
-                        const meaning = wordEl.querySelector('.word-meaning');
+                        const meaning = wordEl.querySelector('.word-meaning') as HTMLElement;
                         if (meaning) {
                             meaning.style.display = 'none';
                         }
