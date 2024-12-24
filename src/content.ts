@@ -32,6 +32,7 @@ export class TranslationExtension {
     private processingElement: HTMLElement | null = null;
     private lastProcessedTime: number = 0;
     private readonly PROCESS_DELAY = 500;
+    private observer: MutationObserver | null = null;
 
     private settings: ExtensionState = {
         enabled: false,
@@ -323,7 +324,7 @@ export class TranslationExtension {
                     const text = this.getElementText(textElement!, e);
                     if (!text || text.length < 2) return;
 
-                    // 음성 재생 모드
+                    // 음성 생��� 모드
                     if (this.useAudioFeature) {
                         this.audioService.startHoverTimer(textElement!, text);
                     }
@@ -559,7 +560,7 @@ export class TranslationExtension {
         return null;
     }
 
-    // 직접인 텍스트 노드를 가지고 있는지 확인하는 헬퍼 메서드
+    // 직접인 텍스트 노드를 가지고 있는지 확인하는 퍼 메서드
     private hasDirectText(element: HTMLElement): boolean {
         let hasText = false;
         for (const node of Array.from(element.childNodes)) {
@@ -657,7 +658,7 @@ export class TranslationExtension {
                                 return NodeFilter.FILTER_REJECT;
                             }
 
-                            // 요소가 문서에 실제로 존재하는지 확인
+                            // 요소가 문서에 실제로 존재하는지 ���인
                             if (!document.contains(parent)) {
                                 return NodeFilter.FILTER_REJECT;
                             }
@@ -809,17 +810,23 @@ export class TranslationExtension {
         this.useAudioFeature = newSettings.useAudioFeature;
         this.autoOpenPanel = newSettings.autoOpenPanel;
 
+        // 이벤트 리스너 재설정
+        this.cleanup();  // 기존 리스너 제거
+        this.setupEventListeners();  // 새로운 리스너 설정
+
         // 새로운 모드 활성화
         if (this.useFullMode) {
             this.fullModeService.applyFullMode();
         }
         if (this.useTooltip) {
-            this.tooltipService.enable();  // TooltipService에 enable 메서드 필요
+            this.tooltipService.enable();
         }
-        if (this.useWordTooltip) {
-            // 이벤트 리스너는 이미 setupEventListeners에서 설정되어 있음
-            // 필요한 경우 추가 초기화 수행
+
+        // 페이지 옵저버 재설정
+        if (this.observer) {
+            this.observer.disconnect();
         }
+        this.setupPageObserver();
 
         logger.log('content', 'Settings updated', this.settings);
     }
@@ -835,6 +842,73 @@ export class TranslationExtension {
             document.querySelectorAll('.word-highlight').forEach(el => el.remove());
             document.querySelectorAll('.word-tooltip').forEach(el => el.remove());
         }
+    }
+
+    private setupPageObserver(): void {
+        // YouTube 전용 옵저버 설정
+        const youtubeObserver = new MutationObserver((mutations) => {
+            if (!this.isEnabled) return;
+
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        const element = node as HTMLElement;
+                        if (element.matches('#content, #info-contents, #description, .ytd-comment-renderer')) {
+                            if (this.useFullMode) {
+                                this.fullModeService.applyFullMode();
+                            }
+                        }
+                    }
+                });
+            });
+        });
+
+        // YouTube 페이지 감시 시작
+        youtubeObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // 일반 페이지용 옵저버
+        this.observer = new MutationObserver((mutations) => {
+            if (!this.isEnabled) return;
+
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE) {
+                        if (this.useFullMode) {
+                            this.fullModeService.applyFullMode();
+                        }
+                        if (this.useWordTooltip) {
+                            // 새로 추가된 요소에 대한 단어 툴팁 이벤트 리스너 설정
+                            this.setupWordTooltipListeners(node as HTMLElement);
+                        }
+                    }
+                });
+            });
+        });
+
+        // 일반 페이지 감시 시작
+        this.observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    private setupWordTooltipListeners(element: HTMLElement): void {
+        element.addEventListener('click', async (e) => {
+            if (!this.useWordTooltip) return;
+            
+            const target = e.target as HTMLElement;
+            if (target.closest('.word-tooltip')) return;
+
+            const clickedWord = this.getWordAtPosition(target, e);
+            if (clickedWord) {
+                const context = this.getElementText(target);
+                await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
+                e.stopPropagation();
+            }
+        });
     }
 }
 
