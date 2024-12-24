@@ -217,7 +217,7 @@ const PopupPanel: React.FC = () => {
         const newSettings = {
             ...settings,
             enabled: newEnabled,
-            // 활성화 시 기본 설정 사용, 비활성화 시 모든 기능 끄기
+            // 활성화 시 기본 설정 정확히 적용
             translationMode: newEnabled ? settings.defaultTranslationMode : 'none',
             wordMode: newEnabled ? settings.defaultWordMode : 'none',
             useAudioFeature: newEnabled ? settings.defaultAudioFeature : false
@@ -230,24 +230,6 @@ const PopupPanel: React.FC = () => {
         // 현재 탭 새로고침
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-            // 설정 변경 메시지를 보내고 응답을 기다림
-            await new Promise<void>((resolve, reject) => {
-                chrome.tabs.sendMessage(
-                    tab.id!,
-                    { type: 'UPDATE_SETTINGS', settings: newSettings },
-                    (response) => {
-                        if (chrome.runtime.lastError) {
-                            reject(chrome.runtime.lastError);
-                        } else if (response?.success) {
-                            resolve();
-                        } else {
-                            reject(new Error('Failed to update settings'));
-                        }
-                    }
-                );
-            });
-            
-            // 설정이 적용된 후 리로드
             await chrome.tabs.reload(tab.id);
         }
     };

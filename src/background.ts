@@ -106,15 +106,21 @@ chrome.windows.onRemoved.addListener((windowId) => {
 // 단축키 리스너 추가
 chrome.commands.onCommand.addListener(async (command) => {
     if (command === 'toggle_extension') {
-        const settings = await chrome.storage.sync.get(['enabled']);
-        const newEnabled = !settings.enabled;
+        // 모든 설정을 가져옴
+        const settings = await chrome.storage.sync.get([
+            'enabled',
+            'defaultTranslationMode',
+            'defaultWordMode',
+            'defaultAudioFeature'
+        ]);
         
+        const newEnabled = !settings.enabled;
         const newSettings = {
             enabled: newEnabled,
-            // 활성화 시 기본 모드 설정, 비활성화 시 모든 기능 끄기
-            translationMode: newEnabled ? 'tooltip' : 'none',  // 기본값: tooltip 모드
-            wordMode: newEnabled ? 'tooltip' : 'none',        // 기본값: tooltip 모드
-            useAudioFeature: newEnabled ? false : false
+            // 활성화 시 기본 설정 정확히 적용
+            translationMode: newEnabled ? settings.defaultTranslationMode : 'none',
+            wordMode: newEnabled ? settings.defaultWordMode : 'none',
+            useAudioFeature: newEnabled ? settings.defaultAudioFeature : false
         };
         
         await chrome.storage.sync.set(newSettings);

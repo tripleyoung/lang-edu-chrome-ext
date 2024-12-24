@@ -103,7 +103,7 @@ export class AudioService {
 
             if (!selectedVoice) throw new Error(`No suitable voice found for ${langCode}`);
 
-            // ��두점으로 끝나는 문장들 찾기
+            // �������장들을 찾기
             const completeSentences = textToSpeak.match(/[^.!?]+[.!?]+/g) || [];
             
             // 마지막 문장이 구두점 없이 끝나는지 확인
@@ -234,6 +234,8 @@ export class AudioService {
             this.timerUI = null;
         }
         this.currentElement = null;
+        this.stopCurrentSpeech();
+        document.querySelectorAll('.audio-timer').forEach(el => el.remove());
     }
 
     public cleanup(): void {
@@ -407,4 +409,15 @@ export class AudioService {
 
         return timerUI;
     }
+
+    private setupAudioFeatures(): void {
+        this.stopCurrentSpeech();
+        document.querySelectorAll('.audio-timer').forEach(el => el.remove());
+    }
+
+    public enable(): void {
+        this.setupAudioFeatures();
+    }
+
+  
 } 

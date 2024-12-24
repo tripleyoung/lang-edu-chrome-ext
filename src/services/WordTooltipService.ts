@@ -185,4 +185,8 @@ export class WordTooltipService {
     public disable(): void {
         document.querySelectorAll('.word-highlight, .word-tooltip').forEach(el => el.remove());
     }
+
+    public enable(): void {
+        // 활성화 로직
+    }
 } 

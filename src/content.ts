@@ -799,42 +799,42 @@ export class TranslationExtension {
 
     // 설정 업데이트 핸들러 수정
     private async handleSettingsUpdate(newSettings: ExtensionState): Promise<void> {
-        // 이전 상태 저장
-        const prevFullMode = this.useFullMode;
-        const prevWordTooltip = this.useWordTooltip;
-
-        // 새 설정 적용
-        this.settings = newSettings;
-        this.isEnabled = newSettings.enabled;
-        this.usePanel = newSettings.usePanel;
-        this.useTooltip = newSettings.translationMode === 'tooltip';
-        this.useFullMode = newSettings.translationMode === 'full';
-        this.useWordTooltip = newSettings.wordMode === 'tooltip';
-        this.useAudioFeature = newSettings.useAudioFeature;
-        this.autoOpenPanel = newSettings.autoOpenPanel;
-
-        // 이벤트 리스너 재설정
-        this.cleanup();  // 기존 리스너 제거
-        this.setupEventListeners();  // 새로운 리스너 설정
-
         try {
-            // 새로운 모드 활성화 (await 추가)
-            if (this.useFullMode) {
-                await this.fullModeService.applyFullMode();
+            this.settings = newSettings;
+            this.isEnabled = newSettings.enabled;
+            
+            // 활성화 상태에 따라 기능 설정
+            if (this.isEnabled) {
+                this.useTooltip = newSettings.translationMode === 'tooltip';
+                this.useFullMode = newSettings.translationMode === 'full';
+                this.useWordTooltip = newSettings.wordMode === 'tooltip';
+                this.useAudioFeature = newSettings.useAudioFeature;
+                
+                // 각 서비스 활성화
+                if (this.useTooltip) {
+                    this.tooltipService.enable();
+                }
+                if (this.useFullMode) {
+                    await this.fullModeService.applyFullMode();
+                }
+                if (this.useWordTooltip) {
+                    this.wordTooltipService.enable();
+                }
+                if (this.useAudioFeature) {
+                    this.audioService.enable();
+                }
+            } else {
+                // 비활성화 시 모든 기능 끄기
+                this.tooltipService.disable();
+                this.audioService.disable();
+                this.fullModeService.disableFullMode();
+                this.wordTooltipService.disable();
             }
-            if (this.useTooltip) {
-                this.tooltipService.enable();
-            }
-
-            // 페이지 옵저버 재설정
-            if (this.observer) {
-                this.observer.disconnect();
-            }
-            this.setupPageObserver();
-
-            logger.log('content', 'Settings updated successfully', this.settings);
+            
+            return Promise.resolve();
         } catch (error) {
             logger.log('content', 'Error updating settings', error);
+            return Promise.reject(error);
         }
     }
 
