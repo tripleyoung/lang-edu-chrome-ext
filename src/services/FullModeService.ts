@@ -50,7 +50,7 @@ export class FullModeService {
 
     private setupPageObserver(): void {
         if (this.observer) {
-            this.observer.disconnect();
+            return;
         }
 
         this.observer = new MutationObserver((mutations) => {
