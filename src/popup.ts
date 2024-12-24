@@ -19,14 +19,14 @@ class PopupManager {
     private async loadSettings(): Promise<void> {
         const settings = await chrome.storage.sync.get([
             'targetLanguage',
-            'isEnabled'
+            'enabled'
         ]) as ExtensionState;
 
-        if (settings.targetLanguage) {
-            this.targetLanguage.value = settings.targetLanguage;
+        if (settings.learningLanguage) {
+            this.targetLanguage.value = settings.learningLanguage;
         }
-        if (typeof settings.isEnabled !== 'undefined') {
-            this.extensionToggle.checked = settings.isEnabled;
+        if (typeof settings.enabled !== 'undefined') {
+            this.extensionToggle.checked = settings.enabled;
         }
     }
 
@@ -38,7 +38,7 @@ class PopupManager {
     private async saveSettings(): Promise<void> {
         await chrome.storage.sync.set({
             targetLanguage: this.targetLanguage.value,
-            isEnabled: this.extensionToggle.checked
+            enabled: this.extensionToggle.checked
         });
 
         // 상태 변경 알림
@@ -46,7 +46,7 @@ class PopupManager {
         if (tabs[0]?.id) {
             await chrome.tabs.sendMessage(tabs[0].id, {
                 type: 'EXTENSION_STATE_CHANGED',
-                isEnabled: this.extensionToggle.checked
+                enabled: this.extensionToggle.checked
             });
         }
     }

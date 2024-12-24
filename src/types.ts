@@ -78,8 +78,14 @@ export interface ClaudeResponse {
 }
 
 export interface ExtensionState {
-    isEnabled: boolean;
-    targetLanguage: string;
+    enabled: boolean;
+    translationMode: 'none' | 'tooltip' | 'full';
+    wordMode: 'none' | 'tooltip' | 'full';
+    usePanel: boolean;
+    autoOpenPanel: boolean;
+    useAudioFeature: boolean;
+    nativeLanguage: string;
+    learningLanguage: string;
 }
 
 export interface TextGroup {

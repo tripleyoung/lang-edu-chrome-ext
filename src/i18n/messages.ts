@@ -22,7 +22,11 @@ export const messages = {
         notUse: '미사용',
         useAudioFeature: '문장 발음 듣기',
         useWordTooltip: '단어 툴팁 모드',
-        wordTooltipDesc: '영단어에 마우스를 올리면 단어의 의미와 발음을 보여줍니다.'
+        wordTooltipDesc: '영단어에 마우스를 올리면 단어의 의미와 발음을 보여줍니다.',
+        wordMode: '단어 모드',
+        noWordTranslation: '단어 번역 없음',
+        wordTooltipMode: '단어 툴팁 모드',
+        wordFullMode: '전체 단어 보기'
     },
     en: {
         settings: 'Settings',
@@ -47,7 +51,11 @@ export const messages = {
         notUse: 'Don\'t Use',
         useAudioFeature: 'Text-to-Speech',
         useWordTooltip: 'Word Tooltip Mode',
-        wordTooltipDesc: 'Shows word definitions and pronunciations when hovering over English words.'
+        wordTooltipDesc: 'Shows word definitions and pronunciations when hovering over English words.',
+        wordMode: 'Word Mode',
+        noWordTranslation: 'No Word Translation',
+        wordTooltipMode: 'Word Tooltip Mode',
+        wordFullMode: 'Show All Words'
     },
     ja: {
         settings: '設定',
@@ -72,7 +80,11 @@ export const messages = {
         notUse: '未使用',
         useAudioFeature: '音声読み上げ',
         useWordTooltip: '単語ツールチップモード',
-        wordTooltipDesc: '英単語にマウスを合わせると、単語の意味と発音を表示します。'
+        wordTooltipDesc: '英単語にマウスを合わせると、単語の意味と発音を表示します。',
+        wordMode: '単語モード',
+        noWordTranslation: '単語翻訳なし',
+        wordTooltipMode: '単語ツールチップモード',
+        wordFullMode: '全単語表示'
     },
     wordTooltipMode: {
         ko: '단어 툴팁 모드',

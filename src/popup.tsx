@@ -3,17 +3,18 @@ import ReactDOM from 'react-dom/client';
 import './styles.css';
 import { messages, Language } from './i18n/messages';
 import { Logger } from './logger';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './components/ui/select';
 const logger = Logger.getInstance();
 
 interface Settings {
+    enabled: boolean;
+    translationMode: 'none' | 'tooltip' | 'full';
+    wordMode: 'none' | 'tooltip' | 'full';
     usePanel: boolean;
-    useTooltip: boolean;
-    useFullMode: boolean;
     autoOpenPanel: boolean;
     useAudioFeature: boolean;
-    useWordTooltip: boolean;
-    nativeLanguage: Language;
-    learningLanguage: Language;
+    nativeLanguage: string;
+    learningLanguage: string;
 }
 
 // 메시지 타입 정의
@@ -22,45 +23,54 @@ type MessageKey = keyof MessageType;
 
 const PopupPanel: React.FC = () => {
     const [settings, setSettings] = useState<Settings>({
-        usePanel: true,
-        useTooltip: false,
-        useFullMode: false,
+        enabled: false,
+        translationMode: 'none',
+        wordMode: 'none',
+        usePanel: false,
         autoOpenPanel: false,
         useAudioFeature: false,
-        useWordTooltip: false,
         nativeLanguage: 'ko',
         learningLanguage: 'en'
     });
 
+    const [language, setLanguage] = useState<Language>(settings.nativeLanguage as Language);
+
     useEffect(() => {
         chrome.storage.sync.get([
-            'usePanel', 
-            'useTooltip', 
-            'useFullMode', 
-            'autoOpenPanel', 
+            'enabled',
+            'translationMode',
+            'wordMode',
+            'usePanel',
+            'autoOpenPanel',
             'useAudioFeature',
-            'useWordTooltip',
             'nativeLanguage',
             'learningLanguage'
         ], (result) => {
             setSettings({
-                usePanel: result.usePanel ?? true,
-                useTooltip: result.useTooltip ?? false,
-                useFullMode: result.useFullMode ?? false,
+                enabled: result.enabled ?? false,
+                translationMode: result.translationMode ?? 'none',
+                wordMode: result.wordMode ?? 'none',
+                usePanel: result.usePanel ?? false,
                 autoOpenPanel: result.autoOpenPanel ?? false,
                 useAudioFeature: result.useAudioFeature ?? false,
-                useWordTooltip: result.useWordTooltip ?? false,
                 nativeLanguage: result.nativeLanguage ?? 'ko',
                 learningLanguage: result.learningLanguage ?? 'en'
             });
         });
     }, []);
 
+    useEffect(() => {
+        setLanguage(settings.nativeLanguage as Language);
+    }, [settings.nativeLanguage]);
+
     // t 함수 수정
     const t = (key: MessageKey): string => {
         const currentLang = settings.nativeLanguage;
-        const langMessages = messages[currentLang] as MessageType;
-        return langMessages[key] || messages['en'][key];
+        if (currentLang in messages) {
+            const langMessages = messages[currentLang as Language];
+            return (langMessages as MessageType)[key] || messages['en'][key];
+        }
+        return messages['en'][key];
     };
 
     const handlePanelToggle = async () => {
@@ -78,53 +88,11 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleTooltipToggle = async () => {
-        const newTooltip = !settings.useTooltip;
-        const newSettings = { 
-            ...settings, 
-            useTooltip: newTooltip,
-            useFullMode: newTooltip ? false : settings.useFullMode 
-        };
-        
-        setSettings(newSettings);
-        await chrome.storage.sync.set({ 
-            useTooltip: newTooltip,
-            useFullMode: newSettings.useFullMode 
-        });
-        
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
-                type: 'UPDATE_SETTINGS',
-                settings: newSettings
-            });
-        }
+        handleSettingChange('translationMode', settings.translationMode === 'tooltip' ? 'none' : 'tooltip');
     };
 
     const handleFullModeToggle = async () => {
-        try {
-            const newFullMode = !settings.useFullMode;
-            const newSettings = { 
-                ...settings, 
-                useFullMode: newFullMode,
-                useTooltip: newFullMode ? false : settings.useTooltip 
-            };
-            
-            setSettings(newSettings);
-            await chrome.storage.sync.set({ 
-                useFullMode: newFullMode,
-                useTooltip: newSettings.useTooltip 
-            });
-            
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab?.id) {
-                await chrome.tabs.sendMessage(tab.id, {
-                    type: 'UPDATE_SETTINGS',
-                    settings: newSettings
-                });
-            }
-        } catch (error) {
-            logger.log('popup', 'Error toggling full mode', error);
-        }
+        handleSettingChange('translationMode', settings.translationMode === 'full' ? 'none' : 'full');
     };
 
     const handleAudioFeatureToggle = async () => {
@@ -142,17 +110,7 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleWordTooltipToggle = async () => {
-        const newValue = !settings.useWordTooltip;
-        setSettings({ ...settings, useWordTooltip: newValue });
-        await chrome.storage.sync.set({ useWordTooltip: newValue });
-        
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-            chrome.tabs.sendMessage(tab.id, {
-                type: 'UPDATE_SETTINGS',
-                settings: { ...settings, useWordTooltip: newValue }
-            });
-        }
+        handleSettingChange('wordMode', settings.wordMode === 'tooltip' ? 'none' : 'tooltip');
     };
 
     const handleLanguageChange = async (type: 'nativeLanguage' | 'learningLanguage', value: Language) => {
@@ -187,6 +145,24 @@ const PopupPanel: React.FC = () => {
         await chrome.runtime.sendMessage({ type: 'OPEN_TRANSLATION_PANEL' });
     };
 
+    const handleSettingChange = async (key: keyof Settings, value: any) => {
+        const newSettings = { ...settings, [key]: value };
+        setSettings(newSettings);
+        await chrome.storage.sync.set({ [key]: value });
+
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'UPDATE_SETTINGS',
+                settings: newSettings
+            });
+        }
+    };
+
+    const handleTranslationModeChange = async (mode: 'none' | 'tooltip' | 'full') => {
+        handleSettingChange('translationMode', mode);
+    };
+
     return (
         <div className="p-4 bg-gray-900 text-white min-w-[300px]">
             <h2 className="text-xl font-bold text-yellow-400 mb-4">{t('settings')}</h2>
@@ -195,39 +171,79 @@ const PopupPanel: React.FC = () => {
             <div className="space-y-4 mb-6">
                 <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('translationMode')}</h3>
                 <div className="flex flex-col gap-2">
-                    <button
-                        className={`px-4 py-2 rounded-lg transition-colors ${
-                            !settings.useTooltip && !settings.useFullMode 
-                                ? 'bg-blue-600 text-white' 
-                                : 'bg-gray-700 text-gray-300'
-                        }`}
-                        onClick={() => {
-                            handleTooltipToggle();
-                            handleFullModeToggle();
-                        }}
-                    >
-                        {t('noTranslation')}
-                    </button>
-                    <button
-                        className={`px-4 py-2 rounded-lg transition-colors ${
-                            settings.useTooltip 
-                                ? 'bg-blue-600 text-white' 
-                                : 'bg-gray-700 text-gray-300'
-                        }`}
-                        onClick={handleTooltipToggle}
-                    >
-                        {t('tooltipMode')}
-                    </button>
-                    <button
-                        className={`px-4 py-2 rounded-lg transition-colors ${
-                            settings.useFullMode 
-                                ? 'bg-blue-600 text-white' 
-                                : 'bg-gray-700 text-gray-300'
-                        }`}
-                        onClick={handleFullModeToggle}
-                    >
-                        {t('fullMode')}
-                    </button>
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="translationMode"
+                            value="none"
+                            checked={settings.translationMode === 'none'}
+                            onChange={(e) => handleSettingChange('translationMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('noTranslation')}</span>
+                    </label>
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="translationMode"
+                            value="tooltip"
+                            checked={settings.translationMode === 'tooltip'}
+                            onChange={(e) => handleSettingChange('translationMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('tooltipMode')}</span>
+                    </label>
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="translationMode"
+                            value="full"
+                            checked={settings.translationMode === 'full'}
+                            onChange={(e) => handleSettingChange('translationMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('fullMode')}</span>
+                    </label>
+                </div>
+            </div>
+
+            {/* 단어 모드 섹션 */}
+            <div className="space-y-4 mb-6">
+                <h3 className="text-lg font-semibold text-gray-300 mb-2">{t('wordMode')}</h3>
+                <div className="flex flex-col gap-2">
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="wordMode"
+                            value="none"
+                            checked={settings.wordMode === 'none'}
+                            onChange={(e) => handleSettingChange('wordMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('noWordTranslation')}</span>
+                    </label>
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="wordMode"
+                            value="tooltip"
+                            checked={settings.wordMode === 'tooltip'}
+                            onChange={(e) => handleSettingChange('wordMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('wordTooltipMode')}</span>
+                    </label>
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="radio"
+                            name="wordMode"
+                            value="full"
+                            checked={settings.wordMode === 'full'}
+                            onChange={(e) => handleSettingChange('wordMode', e.target.value)}
+                            className="text-blue-600"
+                        />
+                        <span>{t('wordFullMode')}</span>
+                    </label>
                 </div>
             </div>
 
@@ -244,16 +260,6 @@ const PopupPanel: React.FC = () => {
                         onClick={handleAudioFeatureToggle}
                     >
                         {t('audioMode')} 🔊
-                    </button>
-                    <button
-                        className={`px-4 py-2 rounded-lg transition-colors ${
-                            settings.useWordTooltip 
-                                ? 'bg-blue-600 text-white' 
-                                : 'bg-gray-700 text-gray-300'
-                        }`}
-                        onClick={handleWordTooltipToggle}
-                    >
-                        {t('wordTooltip')}
                     </button>
                 </div>
             </div>

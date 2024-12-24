@@ -4,6 +4,7 @@ import { AudioService } from './services/AudioService';
 import { TooltipService } from './services/TooltipService';
 import { FullModeService } from './services/FullModeService';
 import { WordTooltipService } from './services/WordTooltipService';
+import { ExtensionState } from './types';
 
 const logger = Logger.getInstance();
 
@@ -32,6 +33,17 @@ export class TranslationExtension {
     private lastProcessedTime: number = 0;
     private readonly PROCESS_DELAY = 500;
 
+    private settings: ExtensionState = {
+        enabled: false,
+        translationMode: 'none',
+        wordMode: 'none',
+        usePanel: false,
+        autoOpenPanel: false,
+        useAudioFeature: false,
+        nativeLanguage: 'ko',
+        learningLanguage: 'en'
+    };
+
     constructor() {
         if (TranslationExtension.instance) {
             return TranslationExtension.instance;
@@ -54,22 +66,37 @@ export class TranslationExtension {
         
     private async initialize(): Promise<void> {
         try {
-            // 저장된 설정 불러오기
+            // 새로운 설정 로드
             const settings = await chrome.storage.sync.get([
+                'enabled',
+                'translationMode',
+                'wordMode',
                 'usePanel',
-                'useTooltip',
-                'useFullMode',
+                'autoOpenPanel',
                 'useAudioFeature',
-                'useWordTooltip',
-                'autoOpenPanel'
-            ]);
+                'nativeLanguage',
+                'learningLanguage'
+            ]) as ExtensionState;
 
-            this.usePanel = settings.usePanel ?? true;
-            this.useTooltip = settings.useTooltip ?? false;
-            this.useFullMode = settings.useFullMode ?? false;
-            this.useAudioFeature = settings.useAudioFeature ?? false;
-            this.useWordTooltip = settings.useWordTooltip ?? false;
-            this.autoOpenPanel = settings.autoOpenPanel ?? false;
+            this.settings = {
+                enabled: settings.enabled ?? false,
+                translationMode: settings.translationMode ?? 'none',
+                wordMode: settings.wordMode ?? 'none',
+                usePanel: settings.usePanel ?? false,
+                autoOpenPanel: settings.autoOpenPanel ?? false,
+                useAudioFeature: settings.useAudioFeature ?? false,
+                nativeLanguage: settings.nativeLanguage ?? 'ko',
+                learningLanguage: settings.learningLanguage ?? 'en'
+            };
+
+            // 기존 속성들과 동기화
+            this.isEnabled = this.settings.enabled;
+            this.usePanel = this.settings.usePanel;
+            this.useTooltip = this.settings.translationMode === 'tooltip';
+            this.useFullMode = this.settings.translationMode === 'full';
+            this.useWordTooltip = this.settings.wordMode === 'tooltip';
+            this.useAudioFeature = this.settings.useAudioFeature;
+            this.autoOpenPanel = this.settings.autoOpenPanel;
 
             // BR 태그 주변의 텍스트를 span으로 감싸기
             document.querySelectorAll('br').forEach(br => {
@@ -144,7 +171,7 @@ export class TranslationExtension {
             if (this.useFullMode !== prevFullMode) {
                 if (this.useFullMode) {
                     await this.fullModeService.applyFullMode();
-                    // 전체 모드 적용 후 음성 기능이 활성화되어 있으면 음성 아이콘 추가
+                    // 전체 모드 적용 후 ��성 기능이 활성화되어 있으면 음성 아이콘 추가
                     if (this.useAudioFeature) {
                         setTimeout(() => this.processTextElements(), 1000);
                     }
@@ -315,7 +342,7 @@ export class TranslationExtension {
             }, this.debounceTime);
         };
 
-        // 이벤트 리스너 등록 (캡처링 페이즈 사���)
+        // 이벤트 리스너 등록 (캡처링 페이즈 사용)
         document.body.addEventListener('mouseover', handleMouseOver, { 
             passive: true,
             capture: true
@@ -353,6 +380,13 @@ export class TranslationExtension {
                 await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
                 e.stopPropagation();
                 return;
+            }
+        });
+
+        // 설정 변경 메시지 리스너 추가
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.type === 'UPDATE_SETTINGS') {
+                this.handleSettingsUpdate(message.settings);
             }
         });
     }
@@ -756,6 +790,36 @@ export class TranslationExtension {
         }
 
         return null;
+    }
+
+    // 설정 업데이트 메시지 핸들러 추가
+    private handleSettingsUpdate(newSettings: ExtensionState): void {
+        this.settings = newSettings;
+        
+        // 기존 속성들 업데이트
+        this.isEnabled = newSettings.enabled;
+        this.usePanel = newSettings.usePanel;
+        this.useTooltip = newSettings.translationMode === 'tooltip';
+        this.useFullMode = newSettings.translationMode === 'full';
+        this.useWordTooltip = newSettings.wordMode === 'tooltip';
+        this.useAudioFeature = newSettings.useAudioFeature;
+        this.autoOpenPanel = newSettings.autoOpenPanel;
+
+        // UI 업데이트
+        this.updateUI();
+    }
+
+    private updateUI(): void {
+        if (this.settings.translationMode === 'full') {
+            this.applyFullMode();
+        } else {
+            document.querySelectorAll('.translation-inline-container').forEach(el => el.remove());
+        }
+
+        if (this.settings.wordMode === 'none') {
+            document.querySelectorAll('.word-highlight').forEach(el => el.remove());
+            document.querySelectorAll('.word-tooltip').forEach(el => el.remove());
+        }
     }
 }
 
