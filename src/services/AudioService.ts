@@ -6,8 +6,6 @@ const logger = Logger.getInstance();
 export class AudioService {
     private static instance: AudioService | null = null;
     private isInitialized: boolean = false;
-    private hoverTimer: number | null = null;
-    private readonly HOVER_DELAY = 5000;
     private timerUI: HTMLElement | null = null;
     private isPlaying: boolean = false;
     private currentElement: HTMLElement | null = null;
@@ -105,7 +103,7 @@ export class AudioService {
 
             if (!selectedVoice) throw new Error(`No suitable voice found for ${langCode}`);
 
-            // 구두점으로 끝나는 문장들 찾기
+            // ��두점으로 끝나는 문장들 찾기
             const completeSentences = textToSpeak.match(/[^.!?]+[.!?]+/g) || [];
             
             // 마지막 문장이 구두점 없이 끝나는지 확인
@@ -147,7 +145,7 @@ export class AudioService {
                     speechSynthesis.speak(utterance);
                 });
 
-                // 문장 사이에 짧은 간격 추가
+                // 문장 사이에 짧은 격 추가
                 await new Promise(resolve => setTimeout(resolve, 100));
             }
         } catch (error) {
@@ -185,84 +183,54 @@ export class AudioService {
         // 이미 처리 중인 요소면 무시
         if (this.currentElement === element) return;
 
-        // 이전 타이머 정리
-        this.clearCurrentTimer();
+        // 이전 UI가 있으면 제거
+        if (this.timerUI) {
+            const container = this.timerUI.parentElement;
+            if (container) {
+                container.remove();
+            }
+            this.timerUI = null;
+        }
 
         this.currentElement = element;
 
-        // 타릭 가능한 타이머 UI 생성
+        // 새로운 타이머 UI 생성
         const rect = element.getBoundingClientRect();
         this.timerUI = this.createTimerUI(rect.left, rect.top);
-
-        // 클릭 ��벤트 추가
         this.timerUI.style.pointerEvents = 'auto';
         this.timerUI.style.cursor = 'pointer';
 
-        let isOverTimer = false;
-        let isOverElement = false;
-
-        // 타이머 UI에 마우스 진입/이탈 이벤트 추가
-        this.timerUI.addEventListener('mouseenter', () => {
-            isOverTimer = true;
-        });
-
-        // this.timerUI.addEventListener('mouseleave', () => {
-        //     isOverTimer = false;
-        //     if (!isOverElement) {
-        //         this.clearCurrentTimer();
-        //     }
-        // });
-
-        // 원본 요소에 마우스 진입/이탈 이벤트 추가
-        element.addEventListener('mouseenter', () => {
-            isOverElement = true;
-        });
-
-        // element.addEventListener('mouseleave', () => {
-        //     isOverElement = false;
-        //     setTimeout(() => {
-        //         if (!isOverTimer) {
-        //             this.clearCurrentTimer();
-        //         }
-        //     }, 100);
-        // });
+        const container = document.createElement('div');
+        container.style.cssText = `
+            position: fixed;
+            left: ${rect.left}px;
+            top: ${rect.top - 30}px;
+            z-index: 2147483647;
+        `;
+        container.appendChild(this.timerUI);
+        document.body.appendChild(container);
 
         // 클릭 이벤트 핸들러
         this.timerUI.addEventListener('click', async () => {
             try {
                 if (this.isPlaying) return;
                 this.isPlaying = true;
-
-                // 언어 감지 로직 개선
                 const sourceLang = await this.translationService.detectLanguage(text);
-                logger.log('audio', 'Language detected', {
-                    text: text.substring(0, 50),
-                    detectedLang: sourceLang
-                });
-
-          
                 await this.playText(text, sourceLang);
             } catch (error) {
                 logger.log('audio', 'Error in timer click', error);
             } finally {
                 this.isPlaying = false;
-                this.clearCurrentTimer();
             }
         });
-
-        // 호버 타이머 설정
-        this.hoverTimer = window.setTimeout(() => {
-            logger.log('audio', 'Timer completed, waiting for click');
-        }, this.HOVER_DELAY);
     }
 
-    private clearCurrentTimer(): void {
-        if (this.hoverTimer) {
-            clearTimeout(this.hoverTimer);
-            this.hoverTimer = null;
-        }
+    public disable(): void {
         if (this.timerUI) {
-            this.timerUI.remove();
+            const container = this.timerUI.parentElement;
+            if (container) {
+                container.remove();
+            }
             this.timerUI = null;
         }
         this.currentElement = null;
@@ -427,60 +395,16 @@ export class AudioService {
             cursor: pointer;
         `;
 
-        // 0.3초 후에 나타나게 하고, 3초 동안 표시
+        // 0.3초 후에 나타나게만 하고, 자동으로 사라지지 않도록 수정
         setTimeout(() => {
             timerUI.style.opacity = '1';
-            
-            // 3초 후에 천천히 사라지기
-            setTimeout(() => {
-                timerUI.style.opacity = '0';
-                setTimeout(() => {
-                    if (timerUI.parentElement) {
-                        timerUI.remove();
-                    }
-                }, 300);
-            }, 3000);
         }, 300);
 
-        // 마우스가 아이콘 위에 있을 때는 유지
+        // 마우스가 아이콘 위에 있을 때 스타일
         timerUI.addEventListener('mouseenter', () => {
             timerUI.style.opacity = '1';
         });
 
-        // 툴팁 스타일
-        const tooltip = timerUI.querySelector('.audio-tooltip');
-        if (tooltip) {
-            (tooltip as HTMLElement).style.cssText = `
-                position: absolute;
-                left: 100%;
-                top: 50%;
-                transform: translateY(-50%);
-                margin-left: 8px;
-                background: rgba(0, 0, 0, 0.8);
-                color: white;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 12px;
-                white-space: nowrap;
-                opacity: 0;
-                transition: opacity 0.2s;
-            `;
-        }
-
-        // 호버 시 툴팁 표시
-        timerUI.addEventListener('mouseenter', () => {
-            if (tooltip) {
-                (tooltip as HTMLElement).style.opacity = '1';
-            }
-        });
-
-        timerUI.addEventListener('mouseleave', () => {
-            if (tooltip) {
-                (tooltip as HTMLElement).style.opacity = '0';
-            }
-        });
-
-        document.body.appendChild(timerUI);
         return timerUI;
     }
 } 
