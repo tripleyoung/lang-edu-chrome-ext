@@ -45,74 +45,28 @@ export class WordTooltipService {
 
             // 단어의 언어 감지
             const sourceLang = await this.translationService.detectLanguage(word);
-            logger.log('wordTooltip', 'Language detection result', { 
-                word,
-                sourceLang,
-                nativeLang,
-                learningLang
-            });
+            
+            // 모국어인 경우 학습 언어로, 그 외의 경우 모국어로 번역
+            const targetLang = sourceLang === nativeLang ? learningLang : nativeLang;
+            
+            // 단어 직접 번역 (문맥 번역 대신 단어 자체를 번역)
+            const translation = await this.translationService.translateText(word, sourceLang);
 
-            let translation = '';
-
-            try {
-                // 모국어인 경우 학습 언어로 번역, 그 외의 경우 모국어로 번역
-                const targetLang = sourceLang === nativeLang ? learningLang : nativeLang;
-                logger.log('wordTooltip', 'Translation direction', { 
-                    sourceLang,
-                    targetLang,
-                    word,
-                    context: context.substring(0, 50) // 문맥의 일부만 로깅
-                });
-
-                // 1. 문맥에서 단어 번역 시도
-                const contextTranslation = await this.translationService.translateText(context, sourceLang);
-                logger.log('wordTooltip', 'Context translation result', { 
-                    contextTranslation,
-                    words: context.toLowerCase().split(/\s+/),
-                    translations: contextTranslation.split(/\s+/)
-                });
-
-                const words = context.toLowerCase().split(/\s+/);
-                const translations = contextTranslation.split(/\s+/);
-                const wordIndex = words.indexOf(word.toLowerCase());
-
-                if (wordIndex >= 0 && wordIndex < translations.length) {
-                    translation = translations[wordIndex];
-                    logger.log('wordTooltip', 'Found translation in context', { 
-                        word,
-                        translation,
-                        wordIndex
-                    });
-                } else {
-                    // 단어 자체 번역
-                    translation = await this.translationService.translateText(word, sourceLang);
-                    logger.log('wordTooltip', 'Direct word translation', { 
-                        word,
-                        translation
-                    });
-                }
-            } catch (error) {
-                logger.log('wordTooltip', 'Error in translation process', { 
-                    word,
-                    sourceLang,
-                    error
-                });
-                // 번역 실패 시 단어 자체 번역
-                translation = await this.translationService.translateText(word, sourceLang);
-            }
+            // 오버레이된 단어 요소 찾기
+            const overlay = document.querySelector('.word-highlight') as HTMLElement;
+            if (!overlay) return;
 
             // 툴팁 생성 및 표시
             const tooltip = this.createTooltip(word, translation, sourceLang);
-            const rect = element.getBoundingClientRect();
             
-            // 툴팁 위치 계산 (단어 위에 중앙 정렬)
+            // 오버레이 위치 기준으로 툴팁 위치 설정
+            const overlayRect = overlay.getBoundingClientRect();
             tooltip.style.visibility = 'hidden';
             document.body.appendChild(tooltip);
             const tooltipRect = tooltip.getBoundingClientRect();
             
-            const centerX = rect.left + (rect.width / 2);
-            tooltip.style.left = `${centerX - (tooltipRect.width / 2) + window.scrollX}px`;
-            tooltip.style.top = `${rect.top + window.scrollY - tooltipRect.height - 8}px`;
+            tooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (tooltipRect.width / 2)}px`;
+            tooltip.style.top = `${overlayRect.top - tooltipRect.height - 8}px`;
             tooltip.style.visibility = 'visible';
 
             this.currentTooltips.push({
