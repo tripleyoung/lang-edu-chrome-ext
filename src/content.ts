@@ -688,7 +688,6 @@ export class TranslationExtension {
     private getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
         const range = document.createRange();
         
-        // 텍스트 노드들을 순회
         const walker = document.createTreeWalker(
             element,
             NodeFilter.SHOW_TEXT,
@@ -699,7 +698,7 @@ export class TranslationExtension {
         while (node = walker.nextNode() as Text) {
             const text = node.textContent || '';
             
-            // 영어와 한글 단어 모두 매칭하도록 정규식 수정
+            // 영어와 한글 단어 모두 매칭
             const words = text.match(/\b[A-Za-z]+\b|[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g);
             if (!words) continue;
 
@@ -717,32 +716,32 @@ export class TranslationExtension {
                 if (event.clientX >= rect.left && event.clientX <= rect.right &&
                     event.clientY >= rect.top && event.clientY <= rect.bottom) {
                     
-                    try {
-                        // 단어를 span으로 감싸기
-                        const span = document.createElement('span');
-                        span.className = 'word-highlight';
-                        span.textContent = word;
-                        range.surroundContents(span);
-
-                        // 스타일 적용
-                        span.style.cssText = `
-                            cursor: pointer;
-                            display: inline-block;
-                            position: relative;
-                        `;
-                        
-                        return {
-                            word: word,
-                            element: span
-                        };
-                    } catch (error) {
-                        logger.log('content', 'Error wrapping word with span', { word, error });
-                        // span 생성 실패 시 원래 요소 반환
-                        return {
-                            word: word,
-                            element: element
-                        };
-                    }
+                    // 오버레이 생성 (원본 텍스트는 수정하지 않음)
+                    const overlay = document.createElement('span');
+                    overlay.className = 'word-highlight';
+                    overlay.textContent = word;
+                    overlay.style.cssText = `
+                        position: fixed;
+                        left: ${rect.left}px;
+                        top: ${rect.top}px;
+                        width: ${rect.width}px;
+                        height: ${rect.height}px;
+                        background-color: rgba(255, 255, 0, 0.3);
+                        pointer-events: none;
+                        z-index: 2147483646;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: ${getComputedStyle(element).fontSize};
+                        font-family: ${getComputedStyle(element).fontFamily};
+                    `;
+                    
+                    document.body.appendChild(overlay);
+                    
+                    return {
+                        word: word,
+                        element: element  // 원본 요소 반환
+                    };
                 }
                 
                 pos = wordStart + word.length;
