@@ -7,7 +7,7 @@ export class AudioService {
     private static instance: AudioService | null = null;
     private isInitialized: boolean = false;
     private hoverTimer: number | null = null;
-    private readonly HOVER_DELAY = 2000;
+    private readonly HOVER_DELAY = 5000;
     private timerUI: HTMLElement | null = null;
     private isPlaying: boolean = false;
     private currentElement: HTMLElement | null = null;
