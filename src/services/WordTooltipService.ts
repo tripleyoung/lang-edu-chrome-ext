@@ -116,7 +116,7 @@ export class WordTooltipService {
             <div class="tooltip-content" style="display: flex; align-items: center; gap: 4px;">
                 <span class="translation" style="margin-right: 4px;">${translation}</span>
                 <div class="tooltip-controls" style="display: flex; align-items: center;">
-                    <button type="button" data-action="play-audio" class="audio-button">
+                    <button type="button" id="word-audio-btn" class="audio-button">
                         <svg width="16" height="16" viewBox="0 0 32 32" style="display: block;">
                             <circle cx="16" cy="16" r="14" fill="rgba(255,255,255,0.1)"/>
                             <path d="M16 8 L12 12 L8 12 L8 20 L12 20 L16 24 L16 8z M20 12 Q22 16 20 20 M23 9 Q27 16 23 23"
@@ -124,7 +124,7 @@ export class WordTooltipService {
                                 stroke-linecap="round" stroke-linejoin="round"/>
                         </svg>
                     </button>
-                    <button type="button" data-action="close" class="close-button" style="padding: 0 4px;">×</button>
+                    <button type="button" id="word-close-btn" class="close-button" style="padding: 0 4px;">×</button>
                 </div>
             </div>
         `;
@@ -144,9 +144,12 @@ export class WordTooltipService {
             user-select: none;
         `;
 
-        // 버든 버튼에 대한 공통 스타일
-        const buttons = tooltip.querySelectorAll('button');
-        buttons.forEach(btn => {
+        // 버튼 스타일 적용
+        const audioBtn = tooltip.querySelector('#word-audio-btn') as HTMLButtonElement;
+        const closeBtn = tooltip.querySelector('#word-close-btn') as HTMLButtonElement;
+
+        [audioBtn, closeBtn].forEach(btn => {
+            if (!btn) return;
             btn.style.cssText = `
                 background: none;
                 border: none;
@@ -163,31 +166,53 @@ export class WordTooltipService {
             `;
         });
 
-        // 이벤트 위임을 사용한 버튼 클릭 처리
-        tooltip.addEventListener('click', async (e) => {
-            const target = e.target as HTMLElement;
-            const button = target.closest('button');
+        // 오디오 버튼 이벤트
+        if (audioBtn) {
+            logger.log('wordTooltip', 'Registering audio button event');
             
-            if (!button) return;
-            
-            e.preventDefault();
-            e.stopPropagation();
+            audioBtn.addEventListener('mousedown', async (e) => {
+                logger.log('wordTooltip', 'Audio button mousedown');
+                e.preventDefault();
+                e.stopPropagation();
+                try {
+                    await this.playWordAudio(word, sourceLang);
+                    logger.log('wordTooltip', 'Audio playback completed');
+                } catch (error) {
+                    logger.log('wordTooltip', 'Audio playback error', error);
+                }
+            });
+        }
 
-            const action = button.getAttribute('data-action');
-            logger.log('wordTooltip', `Button clicked: ${action}`);
-
-            if (action === 'play-audio') {
-                await this.playWordAudio(word, sourceLang);
-            } else if (action === 'close') {
+        // 닫기 버튼 이벤트
+        if (closeBtn) {
+            logger.log('wordTooltip', 'Registering close button event');
+            closeBtn.addEventListener('mousedown', (e) => {
+                logger.log('wordTooltip', 'Close button mousedown');
+                e.preventDefault();
+                e.stopPropagation();
                 this.removeTooltips();
-            }
-        });
+            });
+        }
 
         return tooltip;
     }
 
     private removeTooltips(): void {
         this.currentTooltips.forEach(tooltip => {
+            // 이벤트 리스너 정리
+            const audioBtn = tooltip.element.querySelector('#word-audio-btn') as HTMLButtonElement;
+            const closeBtn = tooltip.element.querySelector('#word-close-btn') as HTMLButtonElement;
+            
+            if (audioBtn) {
+                audioBtn.onclick = null;
+                logger.log('wordTooltip', 'Audio button event removed');
+            }
+            
+            if (closeBtn) {
+                closeBtn.onclick = null;
+                logger.log('wordTooltip', 'Close button event removed');
+            }
+
             tooltip.element.remove();
         });
         this.currentTooltips = [];
@@ -198,17 +223,31 @@ export class WordTooltipService {
     }
 
     public disable(): void {
-        document.querySelectorAll('.word-highlight, .word-tooltip').forEach(el => el.remove());
+        // 기존 이벤트 리스너 정리
+        this.currentTooltips.forEach(tooltip => {
+            const audioBtn = tooltip.element.querySelector('#word-audio-btn') as HTMLButtonElement;
+            const closeBtn = tooltip.element.querySelector('#word-close-btn') as HTMLButtonElement;
+            
+            if (audioBtn) audioBtn.onclick = null;
+            if (closeBtn) closeBtn.onclick = null;
+        });
+
+        // 요소 제거
+        document.querySelectorAll('.word-highlight').forEach(el => el.remove());
+        document.querySelectorAll('.word-tooltip').forEach(el => el.remove());
+        
+        this.currentTooltips = [];
+        this.useWordTooltip = false;  // 비활성화 상태 설정
     }
 
     public enable(): void {
+        this.useWordTooltip = true;  // 활성화 상태 설정
+        
         // AudioService 초기화
         this.audioService.initialize().catch(error => {
             logger.log('wordTooltip', 'Failed to initialize audio service', error);
         });
 
-        this.useWordTooltip = true;
-        
         // 문서 전체에 대해 이벤트 리스너 설정
         document.body.querySelectorAll('p, span, div').forEach(element => {
             this.setupWordTooltipListeners(element as HTMLElement);
@@ -243,6 +282,13 @@ export class WordTooltipService {
             }
             
             const target = e.target as HTMLElement;
+            // 툴팁 내부의 버튼 클릭은 무시
+            if (target.tagName === 'BUTTON' || target.closest('button')) {
+                logger.log('wordTooltip', 'Button clicked, skipping word tooltip logic');
+                return;
+            }
+
+            // 툴팁 내부 클릭은 무시
             if (target.closest('.word-tooltip')) {
                 logger.log('wordTooltip', 'Clicked inside tooltip, ignoring');
                 return;
