@@ -121,19 +121,20 @@ export class TranslationExtension {
             // 설정 변경 리스너 가
             chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 if (message.type === 'UPDATE_SETTINGS') {
-                    // 비동기 처리를 위해 Promise를 반환
-                    Promise.resolve().then(async () => {
-                        try {
-                            await this.updateSettings(message.settings);
-                            sendResponse({ success: true });
-                        } catch (error) {
-                            logger.log('content', 'Error updating settings', error);
-                            sendResponse({ success: false });
-                        }
-                    });
-                    return true; // 비동기 응답을 위해 true 반환
+                    // 비드 변경 전 현재 모드 정리
+                    if (this.useFullMode) {
+                        this.fullModeService.disableFullMode();
+                    }
+                    if (this.useWordTooltip) {
+                        this.wordTooltipService.disable();
+                    }
+                    
+                    // 설정 업데이트
+                    this.handleSettingsUpdate(message.settings);
+                    
+                    // 응답 보내기
+                    sendResponse({ success: true });
                 }
-                return true;
             });
 
             // 기능 초기화
@@ -171,7 +172,7 @@ export class TranslationExtension {
             if (this.useFullMode !== prevFullMode) {
                 if (this.useFullMode) {
                     await this.fullModeService.applyFullMode();
-                    // 전체 모드 적용 후 ��성 기능이 활성화되어 있으면 음성 아이콘 추가
+                    // 전체 모드 적용 후 성 기능이 활성화되어 있으면 음성 아이콘 추가
                     if (this.useAudioFeature) {
                         setTimeout(() => this.processTextElements(), 1000);
                     }
@@ -579,7 +580,7 @@ export class TranslationExtension {
             const textBlocks: string[] = [];
             let currentBlock = '';
 
-            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 분리
+            // 각 노드를 순회하면서 BR 태그를 기준으로 텍스트 블록 ���리
             element.childNodes.forEach(node => {
                 if (node.nodeType === Node.TEXT_NODE) {
                     const text = node.textContent?.trim();
@@ -792,11 +793,14 @@ export class TranslationExtension {
         return null;
     }
 
-    // 설정 업데이트 메시지 핸들러 추가
+    // 설정 업데이트 핸들러 수정
     private handleSettingsUpdate(newSettings: ExtensionState): void {
+        // 이전 상태 저장
+        const prevFullMode = this.useFullMode;
+        const prevWordTooltip = this.useWordTooltip;
+
+        // 새 설정 적용
         this.settings = newSettings;
-        
-        // 기존 속성들 업데이트
         this.isEnabled = newSettings.enabled;
         this.usePanel = newSettings.usePanel;
         this.useTooltip = newSettings.translationMode === 'tooltip';
@@ -805,8 +809,7 @@ export class TranslationExtension {
         this.useAudioFeature = newSettings.useAudioFeature;
         this.autoOpenPanel = newSettings.autoOpenPanel;
 
-        // UI 업데이트
-        this.updateUI();
+        logger.log('content', 'Settings updated', this.settings);
     }
 
     private updateUI(): void {

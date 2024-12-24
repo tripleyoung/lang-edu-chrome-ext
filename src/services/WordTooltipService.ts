@@ -181,4 +181,8 @@ export class WordTooltipService {
     public cleanup(): void {
         this.removeTooltips();
     }
+
+    public disable(): void {
+        document.querySelectorAll('.word-highlight, .word-tooltip').forEach(el => el.remove());
+    }
 } 

@@ -146,26 +146,52 @@ const PopupPanel: React.FC = () => {
     };
 
     const handleSettingChange = async (key: keyof Settings, value: any) => {
-        const newSettings = { ...settings, [key]: value };
-        setSettings(newSettings);
-        await chrome.storage.sync.set({ [key]: value });
+        try {
+            const newSettings = { ...settings, [key]: value };
+            
+            // 1. 먼저 설정을 저장
+            await chrome.storage.sync.set({ [key]: value });
+            
+            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (tab?.id) {
+                if (key === 'translationMode' || key === 'wordMode') {
+                    // 2. 설정 업데이트 메시지를 보내고 응답을 기다림
+                    await new Promise<void>((resolve, reject) => {
+                        chrome.tabs.sendMessage(
+                            tab.id!, 
+                            { type: 'UPDATE_SETTINGS', settings: newSettings },
+                            (response) => {
+                                if (chrome.runtime.lastError) {
+                                    reject(chrome.runtime.lastError);
+                                } else if (response?.success) {
+                                    resolve();
+                                } else {
+                                    reject(new Error('Failed to update settings'));
+                                }
+                            }
+                        );
+                    });
 
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) {
-            // 모드 변경 시 페이지 리로드
-            if (key === 'translationMode' || key === 'wordMode') {
-                chrome.tabs.sendMessage(tab.id, {
-                    type: 'UPDATE_SETTINGS',
-                    settings: newSettings
-                }, () => {
-                    chrome.tabs.reload(tab.id!);
-                });
-            } else {
-                chrome.tabs.sendMessage(tab.id, {
-                    type: 'UPDATE_SETTINGS',
-                    settings: newSettings
-                });
+                    // 3. 설정이 적용된 것을 확인한 후 리로드
+                    await chrome.tabs.reload(tab.id);
+                    
+                    // 4. 상태 업데이트는 리로드 후에 수행
+                    setTimeout(() => {
+                        setSettings(newSettings);
+                    }, 100);
+                } else {
+                    // 일반 설정 변경
+                    await chrome.tabs.sendMessage(tab.id, {
+                        type: 'UPDATE_SETTINGS',
+                        settings: newSettings
+                    });
+                    setSettings(newSettings);
+                }
             }
+        } catch (error) {
+            console.error('Error updating settings:', error);
+            // 에러 발생 시 이전 설정으로 롤백
+            setSettings(settings);
         }
     };
 

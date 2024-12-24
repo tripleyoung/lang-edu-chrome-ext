@@ -13,27 +13,27 @@ export class FullModeService {
 
     public async applyFullMode(): Promise<void> {
         try {
+            // 이전 상태 완전히 정리
+            this.disableFullMode();
+            
             this.isTranslating = true;
             logger.log('fullMode', 'Starting full mode translation');
             
-            // 기존 번역만 제거 (단어 툴팁은 유지)
-            document.querySelectorAll('.translation-inline-container').forEach(el => {
-                const text = el.querySelector('.original')?.textContent || el.textContent;
-                if (text) {
-                    const textNode = document.createTextNode(text);
-                    el.parentNode?.replaceChild(textNode, el);
-                }
-            });
+            // 기존 번역 제거
+            this.removeExistingTranslations();
 
             // 일반 텍스트 노드 처리
             await this.translateAllTextNodes();
             
             // 페이지 변경 감지 설정
             this.setupPageObserver();
+            
+            // 주기적 체크 시작
             this.startPeriodicCheck();
 
             logger.log('fullMode', 'Full mode applied successfully');
         } catch (error) {
+            this.isTranslating = false;
             logger.log('fullMode', 'Error applying full mode', error);
             throw error;
         }
@@ -174,7 +174,7 @@ export class FullModeService {
                     // 구두점으로 끝나는 문장들 찾기
                     const completeSentences = text.match(/[^.!?]+[.!?]+/g) || [];
                     
-                    // 마지막 문장이 구두점 없이 끝나는지 확인
+                    // 마지�� 문장이 구두점 없이 끝는지 확인
                     const lastPart = text.replace(/.*[.!?]\s*/g, '').trim();
                     
                     // 최종 문장 배열 구성
@@ -311,18 +311,40 @@ export class FullModeService {
     }
 
     public disableFullMode(): void {
-        this.isTranslating = false;
-        if (this.observer) {
-            this.observer.disconnect();
-            this.observer = null;
+        try {
+            this.isTranslating = false;
+            
+            // Observer 정리
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observer = null;
+            }
+
+            // 주기적 체크 정리
+            if (this.periodicCheckInterval) {
+                clearInterval(this.periodicCheckInterval);
+                this.periodicCheckInterval = null;
+            }
+
+            // 모든 번역 요소 제거
+            this.removeExistingTranslations();
+            
+            // Set 정리
+            this.translationElements.clear();
+
+            // 추가적인 정리
+            document.querySelectorAll('.translation-inline-container').forEach(el => {
+                const text = el.querySelector('.original')?.textContent || el.textContent;
+                if (text) {
+                    const textNode = document.createTextNode(text);
+                    el.parentNode?.replaceChild(textNode, el);
+                }
+            });
+
+            logger.log('fullMode', 'Full mode disabled and cleaned up');
+        } catch (error) {
+            logger.log('fullMode', 'Error during full mode cleanup', error);
         }
-        if (this.periodicCheckInterval) {
-            clearInterval(this.periodicCheckInterval);
-            this.periodicCheckInterval = null;
-        }
-        this.removeExistingTranslations();
-        this.translationElements.clear();
-        logger.log('fullMode', 'Full mode disabled');
     }
 
     private async processTextNode(textNode: Text): Promise<void> {
@@ -342,35 +364,37 @@ export class FullModeService {
     private startPeriodicCheck(): void {
         if (this.periodicCheckInterval) {
             clearInterval(this.periodicCheckInterval);
+            this.periodicCheckInterval = null;
         }
 
-        const scanAndTranslate = () => {
+        const scanAndTranslate = async () => {
             if (!this.isTranslating) return;
 
-            // 나머지 일반 텍스트 노드 처리
-            const walker = document.createTreeWalker(
-                document.body,
-                NodeFilter.SHOW_TEXT,
-                {
-                    acceptNode: (node) => this.filterTextNode(node)
+            try {
+                const walker = document.createTreeWalker(
+                    document.body,
+                    NodeFilter.SHOW_TEXT,
+                    { acceptNode: (node) => this.filterTextNode(node) }
+                );
+
+                const textNodes: Text[] = [];
+                let node: Node | null;
+                while ((node = walker.nextNode()) !== null) {
+                    textNodes.push(node as Text);
                 }
-            );
 
-            const textNodes: Text[] = [];
-            let node: Node | null;
-            while ((node = walker.nextNode()) !== null) {
-                textNodes.push(node as Text);
-            }
-
-            if (textNodes.length > 0) {
-                this.translateBatch(textNodes, 0);
+                if (textNodes.length > 0) {
+                    await this.translateBatch(textNodes, 0);
+                }
+            } catch (error) {
+                logger.log('fullMode', 'Error in periodic check', error);
             }
         };
 
-        // 초기 스캔
+        // 초기 스캔 즉시 실행
         scanAndTranslate();
 
-        // 주기적으로 스캔
+        // 주기적 스캔 설정
         this.periodicCheckInterval = window.setInterval(scanAndTranslate, 2000);
     }
 
