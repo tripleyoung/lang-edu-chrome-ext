@@ -1,8 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "언어 학습 도우미",
+    "name": "__MSG_extensionName__",
     "version": "1.0",
-    "description": "웹 페이지에서 언어 학습을 도와주는 확장 프로그램",
+    "description": "__MSG_extensionDescription__",
+    "default_locale": "ko",
     "permissions": [
         "activeTab",
         "storage",
