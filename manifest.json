@@ -10,19 +10,11 @@
     "permissions": [
         "activeTab",
         "storage",
-        "devtools",
-        "windows",
-        "system.display",
         "scripting",
-        "tabGroups",
-        "tabs",
-        "webNavigation",
         "contextMenus"
     ],
     "host_permissions": [
         "https://api.anthropic.com/*",
-        "<all_urls>",
-        "chrome-extension://*/*",
         "https://translate.googleapis.com/*",
         "https://api.dictionaryapi.dev/*"
     ],
