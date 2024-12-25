@@ -41,52 +41,53 @@ export class WordTooltipService {
 
             // 기존 툴팁이 있는지 확인
             const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
-            if (existingTooltip && existingTooltip.getAttribute('data-word') === word) {
-                // 같은 단어면 위치만 업데이트
+            if (existingTooltip) {
+                if (existingTooltip.getAttribute('data-word') === word) {
+                    // 같은 단어면 위치만 업데이트
+                    const overlayRect = element.getBoundingClientRect();
+                    existingTooltip.style.visibility = 'visible';
+                    existingTooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (existingTooltip.offsetWidth / 2)}px`;
+                    existingTooltip.style.top = `${overlayRect.top - existingTooltip.offsetHeight - 8}px`;
+                    this.isProcessing = false;
+                    return;
+                }
+
+                // 다른 단어면 내용만 업데이트
+                const translation = await this.translationService.translateText(word, await this.translationService.detectLanguage(word));
+                existingTooltip.querySelector('.translation')!.textContent = translation;
+                existingTooltip.setAttribute('data-word', word);
+                
+                // 위치 업데이트
                 const overlayRect = element.getBoundingClientRect();
+                existingTooltip.style.visibility = 'visible';
                 existingTooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (existingTooltip.offsetWidth / 2)}px`;
                 existingTooltip.style.top = `${overlayRect.top - existingTooltip.offsetHeight - 8}px`;
-                return;
+                
+                this.currentTooltips = [{
+                    element: existingTooltip,
+                    word,
+                    translation
+                }];
+            } else {
+                // 툴팁이 없으면 새로 생성
+                const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
+                const translation = await this.translationService.translateText(word, await this.translationService.detectLanguage(word));
+                const tooltip = this.createTooltip(word, translation, await this.translationService.detectLanguage(word));
+                
+                tooltip.style.position = 'fixed';
+                document.body.appendChild(tooltip);
+
+                const overlayRect = element.getBoundingClientRect();
+                tooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (tooltip.offsetWidth / 2)}px`;
+                tooltip.style.top = `${overlayRect.top - tooltip.offsetHeight - 8}px`;
+                tooltip.style.visibility = 'visible';
+
+                this.currentTooltips = [{
+                    element: tooltip,
+                    word,
+                    translation
+                }];
             }
-
-            // 다른 단어일 경우에만 기존 툴팁 제거 및 새로 생성
-            this.removeTooltips();
-
-            // 설정 가져오기
-            const settings = await chrome.storage.sync.get(['nativeLanguage', 'learningLanguage']);
-            const nativeLang = settings.nativeLanguage || 'ko';
-            const learningLang = settings.learningLanguage || 'en';
-
-            // 단어의 언어 감지
-            const sourceLang = await this.translationService.detectLanguage(word);
-            
-            // 모국어인 경우 학습 언어로, 그 외의 경우 모국어로 번역
-            const targetLang = sourceLang === nativeLang ? learningLang : nativeLang;
-            
-            // 단어 직접 번역 (문맥 번역 대신 단어 자체를 번역)
-            const translation = await this.translationService.translateText(word, sourceLang);
-
-            // 툴팁 생성 및 표시
-            const tooltip = this.createTooltip(word, translation, sourceLang);
-            tooltip.style.position = 'fixed';
-            tooltip.style.visibility = 'hidden';
-            document.body.appendChild(tooltip);
-
-            // element는 이미 오버레이 요청임
-            const overlayRect = element.getBoundingClientRect();
-            const tooltipRect = tooltip.getBoundingClientRect();
-
-            // viewport 기준으로 위치 설정
-            tooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (tooltipRect.width / 2)}px`;
-            tooltip.style.top = `${overlayRect.top - tooltipRect.height - 8}px`;
-            tooltip.style.visibility = 'visible';
-
-            this.currentTooltips.push({
-                element: tooltip,
-                word,
-                translation
-            });
-
         } catch (error) {
             logger.log('wordTooltip', 'Error showing word tooltip', error);
         } finally {
