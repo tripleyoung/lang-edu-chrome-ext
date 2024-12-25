@@ -39,7 +39,17 @@ export class WordTooltipService {
             if (this.isProcessing) return;
             this.isProcessing = true;
 
-            // 기존 툴팁 제거
+            // 기존 툴팁이 있는지 확인
+            const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
+            if (existingTooltip && existingTooltip.getAttribute('data-word') === word) {
+                // 같은 단어면 위치만 업데이트
+                const overlayRect = element.getBoundingClientRect();
+                existingTooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (existingTooltip.offsetWidth / 2)}px`;
+                existingTooltip.style.top = `${overlayRect.top - existingTooltip.offsetHeight - 8}px`;
+                return;
+            }
+
+            // 다른 단어일 경우에만 기존 툴팁 제거 및 새로 생성
             this.removeTooltips();
 
             // 설정 가져오기
@@ -210,10 +220,12 @@ export class WordTooltipService {
     }
 
     private removeTooltips(): void {
-        this.currentTooltips.forEach(tooltip => {
+        // 기존 툴팁이 있는지 확인
+        const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
+        if (existingTooltip) {
             // 이벤트 리스너 정리
-            const audioBtn = tooltip.element.querySelector('#word-audio-btn') as HTMLButtonElement;
-            const closeBtn = tooltip.element.querySelector('#word-close-btn') as HTMLButtonElement;
+            const audioBtn = existingTooltip.querySelector('#word-audio-btn') as HTMLButtonElement;
+            const closeBtn = existingTooltip.querySelector('#word-close-btn') as HTMLButtonElement;
             
             if (audioBtn) {
                 audioBtn.onclick = null;
@@ -225,9 +237,16 @@ export class WordTooltipService {
                 logger.log('wordTooltip', 'Close button event removed');
             }
 
-            tooltip.element.remove();
-        });
-        this.currentTooltips = [];
+            // 툴팁 숨기기 (제거하지 않고 재사용을 위해 보관)
+            existingTooltip.style.visibility = 'hidden';
+            this.currentTooltips = [{
+                element: existingTooltip,
+                word: existingTooltip.getAttribute('data-word') || '',
+                translation: existingTooltip.querySelector('.translation')?.textContent || ''
+            }];
+        } else {
+            this.currentTooltips = [];
+        }
     }
 
     public cleanup(): void {
@@ -288,7 +307,7 @@ export class WordTooltipService {
 
             if (!elementFromPoint) return;
 
-            // NodeList를 Array로 변환
+            // 현재 마우스 위치의 오버레이 찾기
             const overlays = Array.from(document.querySelectorAll('.word-highlight'));
             for (const overlay of overlays) {
                 const rect = overlay.getBoundingClientRect();
@@ -298,15 +317,28 @@ export class WordTooltipService {
                     this.lastMousePosition.y <= rect.bottom) {
                     
                     const word = overlay.getAttribute('data-word');
-                    if (word && word !== this.lastCheckedWord) {
-                        this.lastCheckedWord = word;
+                    const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
+
+                    if (existingTooltip) {
+                        // 툴팁이 이미 있으면 위치만 업데이트
+                        const overlayRect = overlay.getBoundingClientRect();
+                        existingTooltip.style.left = `${overlayRect.left + (overlayRect.width / 2) - (existingTooltip.offsetWidth / 2)}px`;
+                        existingTooltip.style.top = `${overlayRect.top - existingTooltip.offsetHeight - 8}px`;
+
+                        // 다른 단어로 이동했을 때만 내용 업데이트
+                        if (word && word !== existingTooltip.getAttribute('data-word')) {
+                            const context = this.getElementText(elementFromPoint as HTMLElement);
+                            this.showWordTooltip(overlay as HTMLElement, word, context);
+                        }
+                    } else if (word) {
+                        // 툴팁이 없을 때만 새로 생성
                         const context = this.getElementText(elementFromPoint as HTMLElement);
                         this.showWordTooltip(overlay as HTMLElement, word, context);
                     }
                     break;
                 }
             }
-        }, 100);
+        }, 50);
     }
 
     private setupWordTooltipListeners(element: HTMLElement): void {
