@@ -402,7 +402,7 @@ export class WordTooltipService {
             // 이전 오버레이 제거
             document.querySelectorAll('.word-highlight').forEach(el => el.remove());
 
-            // 마우스 포인터 아래의 텍스트 노드 찾기
+            // 마우스 포인터 아래�� 텍스트 노드 찾기
             const elementFromPoint = document.elementFromPoint(event.clientX, event.clientY);
             if (!elementFromPoint) return null;
 
@@ -515,7 +515,7 @@ export class WordTooltipService {
             width: ${rect.width}px;
             height: ${rect.height}px;
             background-color: rgba(255, 255, 0, 0.1);
-            z-index: 2147483646;
+            z-index: 1;
             color: transparent;
             user-select: none;
             cursor: pointer;
