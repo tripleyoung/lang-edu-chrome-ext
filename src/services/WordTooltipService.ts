@@ -232,13 +232,11 @@ export class WordTooltipService {
     }
 
     public disable(): void {
-        // 기존 이벤트 리스너 정리
-        this.currentTooltips.forEach(tooltip => {
-            const audioBtn = tooltip.element.querySelector('#word-audio-btn') as HTMLButtonElement;
-            const closeBtn = tooltip.element.querySelector('#word-close-btn') as HTMLButtonElement;
-            
-            if (audioBtn) audioBtn.onclick = null;
-            if (closeBtn) closeBtn.onclick = null;
+        this.useWordTooltip = false;
+        
+        // 이벤트 리스너 제거
+        document.body.removeEventListener('mouseover', this.handleMouseOver.bind(this), {
+            capture: true
         });
 
         // 요소 제거
@@ -246,73 +244,37 @@ export class WordTooltipService {
         document.querySelectorAll('.word-tooltip').forEach(el => el.remove());
         
         this.currentTooltips = [];
-        this.useWordTooltip = false;  // 비활성화 상태 설정
     }
 
     public enable(): void {
-        this.useWordTooltip = true;  // 활성화 상태 설정
+        this.useWordTooltip = true;
         
         // AudioService 초기화
         this.audioService.initialize().catch(error => {
             logger.log('wordTooltip', 'Failed to initialize audio service', error);
         });
 
-        // 문서 전체에 대해 이벤트 리스너 설정
-        document.body.querySelectorAll('p, span, div').forEach(element => {
-            this.setupWordTooltipListeners(element as HTMLElement);
-        });
-
-        // 새로 추가되는 요소들을 위한 MutationObserver 설정
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach(mutation => {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        this.setupWordTooltipListeners(node as HTMLElement);
-                    }
-                });
-            });
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
+        // 문서 전체에 대해 호버 이벤트 리스너 설정
+        document.body.addEventListener('mouseover', this.handleMouseOver.bind(this), {
+            passive: true,
+            capture: true
         });
 
         logger.log('wordTooltip', 'Word tooltip service enabled');
     }
 
-    private setupWordTooltipListeners(element: HTMLElement): void {
-        element.addEventListener('click', async (e) => {
-            logger.log('wordTooltip', 'Element clicked, checking for word');
-            
-            if (!this.useWordTooltip) {
-                logger.log('wordTooltip', 'Word tooltip is disabled');
-                return;
-            }
-            
-            const target = e.target as HTMLElement;
-            // 툴팁 내부의 버튼 클릭은 무시
-            if (target.tagName === 'BUTTON' || target.closest('button')) {
-                logger.log('wordTooltip', 'Button clicked, skipping word tooltip logic');
-                return;
-            }
+    private async handleMouseOver(e: MouseEvent): Promise<void> {
+        if (!this.useWordTooltip) return;
+        
+        const target = e.target as HTMLElement;
+        // 툴팁 내부 요소는 무시
+        if (target.closest('.word-tooltip')) return;
 
-            // 툴팁 내부 클릭은 무시
-            if (target.closest('.word-tooltip')) {
-                logger.log('wordTooltip', 'Clicked inside tooltip, ignoring');
-                return;
-            }
-
-            const clickedWord = this.getWordAtPosition(target, e);
-            if (clickedWord) {
-                logger.log('wordTooltip', 'Found word at position', { word: clickedWord.word });
-                const context = this.getElementText(target);
-                await this.showWordTooltip(clickedWord.element, clickedWord.word, context);
-                e.stopPropagation();
-            } else {
-                logger.log('wordTooltip', 'No word found at click position');
-            }
-        });
+        const hoveredWord = this.getWordAtPosition(target, e);
+        if (hoveredWord) {
+            const context = this.getElementText(target);
+            await this.showWordTooltip(hoveredWord.element, hoveredWord.word, context);
+        }
     }
 
     public getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {

@@ -290,7 +290,7 @@ export class TranslationExtension {
                         return NodeFilter.FILTER_REJECT;
                     }
 
-                    // 텍스트가 비어있거나 공백만 있는 경우 제외
+                    // 텍스트가 비��있거나 공백만 있는 경우 제외
                     if (!text || text.length <= 1 || /^\s*$/.test(text)) {
                         logger.log('content', 'Rejected: Too short or empty', { text });
                         return NodeFilter.FILTER_REJECT;
@@ -324,20 +324,12 @@ export class TranslationExtension {
         const handleMouseOver = async (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             
-            // 툴팁 내부 요소들에 대한 이벤트는 즉시 중단
+            // 툴팁 내부 요소들은 무시
             if (target.closest('.translation-tooltip') || 
-                target.closest('.word-tooltip')) {
-                e.stopPropagation();  // 이벤트 전파 중단
+                target.closest('.word-tooltip') ||
+                target.closest('.audio-icon')) {
                 return;
             }
-
-            // 오디오 아이콘에 대한 이벤트는 계속 유지
-            if (target.closest('.audio-icon')) {
-                return;
-            }
-
-            let textElement = this.findClosestTextElement(target);
-            if (!textElement) return;
 
             if (this.debounceTimer) {
                 clearTimeout(this.debounceTimer);
@@ -345,68 +337,50 @@ export class TranslationExtension {
 
             this.debounceTimer = window.setTimeout(async () => {
                 try {
-                    const text = this.getElementText(textElement!, e);
-                    if (!text || text.length < 2) return;
-
-                    // 음성 생성 모드
-                    if (this.useAudioFeature) {
-                        this.audioService.startHoverTimer(textElement!, text);
+                    // 단어 툴팁 모드
+                    if (this.useWordTooltip) {
+                        const hoveredWord = this.wordTooltipService.getWordAtPosition(target, e);
+                        if (hoveredWord) {
+                            const context = this.getElementText(target);
+                            await this.wordTooltipService.showWordTooltip(hoveredWord.element, hoveredWord.word, context);
+                        }
                     }
 
                     // 일반 툴팁 모드
                     if (this.useTooltip) {
-                        await this.tooltipService.showTooltip(textElement!, text);
+                        let textElement = this.findClosestTextElement(target);
+                        if (!textElement) return;
+
+                        const text = this.getElementText(textElement, e);
+                        if (!text || text.length < 2) return;
+                        await this.tooltipService.showTooltip(textElement, text);
+                    }
+
+                    // 음성 재생 기능
+                    if (this.useAudioFeature) {
+                        let textElement = this.findClosestTextElement(target);
+                        if (textElement) {
+                            const text = this.getElementText(textElement, e);
+                            if (text && text.length > 1) {
+                                this.audioService.startHoverTimer(textElement, text);
+                            }
+                        }
                     }
                 } catch (error) {
-                    logger.log('content', 'Error in mouseenter handler', error);
+                    logger.log('content', 'Error in mouseover handler', error);
                 }
-            }, this.debounceTime);
+            }, 200);
         };
 
-        // 클릭 이벤트 핸들러
-        const handleClick = async (e: MouseEvent) => {
-            if (!this.useWordTooltip) return;
-            
-            const target = e.target as HTMLElement;
-            
-            // 툴팁이나 오디오 아이콘 클릭은 이벤트 전파만 중단
-            if (target.closest('.translation-tooltip') || 
-                target.closest('.word-tooltip') ||
-                target.closest('.audio-icon')) {
-                e.stopPropagation();
-                return;
-            }
-
-            const clickedWord = this.getWordAtPosition(target, e);
-            if (clickedWord) {
-                e.preventDefault();  // 기본 동작 중단
-                e.stopPropagation();  // 이벤트 전파 중단
-                const context = this.getElementText(target);
-                await this.wordTooltipService.showWordTooltip(clickedWord.element, clickedWord.word, context);
-            }
-        };
-
-        // 이벤트 리스너 등록 (캡처링 페이즈 사용)
+        // 이벤트 리스너 등록
         document.body.addEventListener('mouseover', handleMouseOver, { 
             passive: true,
             capture: true
         });
 
-        document.body.addEventListener('click', handleClick, {
-            capture: true  // 캡처링 페이즈에서 처리
-        });
-
         // 클린업 핸들러
         this.cleanupHandlers.add(() => {
             document.body.removeEventListener('mouseover', handleMouseOver, { capture: true });
-            document.body.removeEventListener('click', handleClick, { capture: true });
-        });
-
-        // 설정 변경 메시지 리스너 추가
-        chrome.runtime.onMessage.addListener((message) => {
-            if (message.type === 'UPDATE_SETTINGS') {
-                this.handleSettingsUpdate(message.settings);
-            }
         });
     }
 
