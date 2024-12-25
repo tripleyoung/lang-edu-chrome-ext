@@ -39,7 +39,6 @@ export class WordTooltipService {
             if (this.isProcessing) return;
             this.isProcessing = true;
 
-            // 기존 툴팁이 있는지 확인
             const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
             if (existingTooltip) {
                 if (existingTooltip.getAttribute('data-word') === word) {
@@ -52,10 +51,32 @@ export class WordTooltipService {
                     return;
                 }
 
-                // 다른 단어면 내용만 업데이트
+                // 다른 단어면 내용과 이벤트 리스너 업데이트
                 const translation = await this.translationService.translateText(word, await this.translationService.detectLanguage(word));
+                const sourceLang = await this.translationService.detectLanguage(word);
+                
                 existingTooltip.querySelector('.translation')!.textContent = translation;
                 existingTooltip.setAttribute('data-word', word);
+
+                // 오디오 버튼 이벤트 리스너 재설정
+                const audioBtn = existingTooltip.querySelector('#word-audio-btn') as HTMLButtonElement;
+                if (audioBtn) {
+                    // 이전 이벤트 리스너 모두 제거
+                    const newAudioBtn = audioBtn.cloneNode(true) as HTMLButtonElement;
+                    audioBtn.parentNode?.replaceChild(newAudioBtn, audioBtn);
+                    
+                    // 새 이벤트 리스너 추가
+                    newAudioBtn.addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                            await this.audioService.enable();
+                            await this.playWordAudio(word, sourceLang);
+                        } catch (error) {
+                            logger.log('wordTooltip', 'Audio playback error', error);
+                        }
+                    });
+                }
                 
                 // 위치 업데이트
                 const overlayRect = element.getBoundingClientRect();
