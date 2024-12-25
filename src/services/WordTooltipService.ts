@@ -15,6 +15,9 @@ export class WordTooltipService {
     private currentTooltips: WordTooltip[] = [];
     private isProcessing: boolean = false;
     private useWordTooltip: boolean = false;
+    private checkInterval: number | null = null;
+    private lastCheckedWord: string | null = null;
+    private lastMousePosition = { x: 0, y: 0 };
 
     private constructor(
         private translationService: TranslationService,
@@ -59,7 +62,7 @@ export class WordTooltipService {
             tooltip.style.visibility = 'hidden';
             document.body.appendChild(tooltip);
 
-            // element는 이미 오버레이 요소임
+            // element는 이미 오버레이 요청임
             const overlayRect = element.getBoundingClientRect();
             const tooltipRect = tooltip.getBoundingClientRect();
 
@@ -232,53 +235,78 @@ export class WordTooltipService {
     }
 
     public disable(): void {
-        // 기존 이벤트 리스너 정리
-        this.currentTooltips.forEach(tooltip => {
-            const audioBtn = tooltip.element.querySelector('#word-audio-btn') as HTMLButtonElement;
-            const closeBtn = tooltip.element.querySelector('#word-close-btn') as HTMLButtonElement;
-            
-            if (audioBtn) audioBtn.onclick = null;
-            if (closeBtn) closeBtn.onclick = null;
-        });
+        this.useWordTooltip = false;
+        
+        // 주기적 체크 중지
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+
+        // 마우스 위치 추적 중지
+        document.removeEventListener('mousemove', this.updateMousePosition.bind(this));
 
         // 요소 제거
         document.querySelectorAll('.word-highlight').forEach(el => el.remove());
         document.querySelectorAll('.word-tooltip').forEach(el => el.remove());
         
         this.currentTooltips = [];
-        this.useWordTooltip = false;  // 비활성화 상태 설정
+        this.lastCheckedWord = null;
     }
 
     public enable(): void {
-        this.useWordTooltip = true;  // 활성화 상태 설정
+        this.useWordTooltip = true;
         
         // AudioService 초기화
         this.audioService.initialize().catch(error => {
             logger.log('wordTooltip', 'Failed to initialize audio service', error);
         });
 
-        // 문서 전체에 대해 이벤트 리스너 설정
-        document.body.querySelectorAll('p, span, div').forEach(element => {
-            this.setupWordTooltipListeners(element as HTMLElement);
-        });
-
-        // 새로 추가되는 요소들을 위한 MutationObserver 설정
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach(mutation => {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === Node.ELEMENT_NODE) {
-                        this.setupWordTooltipListeners(node as HTMLElement);
-                    }
-                });
-            });
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        // 마우스 위치 추적 시작
+        document.addEventListener('mousemove', this.updateMousePosition.bind(this));
+        
+        // 주기적 체크 시작
+        this.startChecking();
 
         logger.log('wordTooltip', 'Word tooltip service enabled');
+    }
+
+    private updateMousePosition(e: MouseEvent): void {
+        this.lastMousePosition = { x: e.clientX, y: e.clientY };
+    }
+
+    private startChecking(): void {
+        if (this.checkInterval) return;
+
+        this.checkInterval = window.setInterval(() => {
+            if (!this.useWordTooltip) return;
+
+            const elementFromPoint = document.elementFromPoint(
+                this.lastMousePosition.x,
+                this.lastMousePosition.y
+            );
+
+            if (!elementFromPoint) return;
+
+            // NodeList를 Array로 변환
+            const overlays = Array.from(document.querySelectorAll('.word-highlight'));
+            for (const overlay of overlays) {
+                const rect = overlay.getBoundingClientRect();
+                if (this.lastMousePosition.x >= rect.left && 
+                    this.lastMousePosition.x <= rect.right &&
+                    this.lastMousePosition.y >= rect.top && 
+                    this.lastMousePosition.y <= rect.bottom) {
+                    
+                    const word = overlay.getAttribute('data-word');
+                    if (word && word !== this.lastCheckedWord) {
+                        this.lastCheckedWord = word;
+                        const context = this.getElementText(elementFromPoint as HTMLElement);
+                        this.showWordTooltip(overlay as HTMLElement, word, context);
+                    }
+                    break;
+                }
+            }
+        }, 100);
     }
 
     private setupWordTooltipListeners(element: HTMLElement): void {
@@ -317,78 +345,139 @@ export class WordTooltipService {
 
     public getWordAtPosition(element: HTMLElement, event: MouseEvent): { word: string, element: HTMLElement } | null {
         try {
-            // 이전 오버레이만 제거 (툴팁은 유지)
+            // 이전 오버레이 제거
             document.querySelectorAll('.word-highlight').forEach(el => el.remove());
 
-            const text = element.textContent || '';
-            const words = text.match(/\b\w+\b/g);
-            if (!words) return null;
+            // 마우스 포인터 아래의 텍스트 노드 찾기
+            const elementFromPoint = document.elementFromPoint(event.clientX, event.clientY);
+            if (!elementFromPoint) return null;
 
+            // 텍스트 노드 찾기
+            const textNode = Array.from(elementFromPoint.childNodes)
+                .find(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) as Text;
+
+            if (!textNode) return null;
+
+            const text = textNode.textContent || '';
+            const words = text.split(/\s+/).filter(word => word.length > 0);
             const range = document.createRange();
-            let pos = 0;
+            let hoveredWord = null;
+            let hoveredOverlay = null;
 
-            for (const word of words) {
-                const wordStart = text.indexOf(word, pos);
-                if (wordStart === -1) continue;
-
-                range.setStart(element.firstChild!, wordStart);
-                range.setEnd(element.firstChild!, wordStart + word.length);
-
+            // 모든 단어에 오버레이 생성
+            words.forEach(word => {
+                const start = text.indexOf(word);
+                range.setStart(textNode, start);
+                range.setEnd(textNode, start + word.length);
                 const rect = range.getBoundingClientRect();
+
+                const overlay = this.createOverlay(rect);
+                overlay.setAttribute('data-word', word);
+                document.body.appendChild(overlay);
+
+                // 현재 마우스 위치의 단어 확인
                 if (event.clientX >= rect.left && event.clientX <= rect.right &&
                     event.clientY >= rect.top && event.clientY <= rect.bottom) {
-                    
-                    // 같은 단어에 대한 툴팁이 이미 있다면 오버레이만 업데이트
-                    const existingTooltip = document.querySelector('.word-tooltip') as HTMLElement;
-                    if (existingTooltip && existingTooltip.getAttribute('data-word') === word) {
-                        const overlay = document.createElement('span');
-                        overlay.className = 'word-highlight';
-                        overlay.style.cssText = `
-                            position: fixed;
-                            left: ${rect.left}px;
-                            top: ${rect.top}px;
-                            width: ${rect.width}px;
-                            height: ${rect.height}px;
-                            background-color: rgba(255, 255, 0, 0.1);
-                            pointer-events: none;
-                            z-index: 2147483646;
-                            color: transparent;
-                            user-select: none;
-                        `;
-                        
-                        document.body.appendChild(overlay);
-                        return { word, element: overlay };
-                    }
-
-                    // 다른 단어로 호버했을 때만 이전 툴팁 제거
-                    this.removeTooltips();
-                    
-                    const overlay = document.createElement('span');
-                    overlay.className = 'word-highlight';
-                    overlay.style.cssText = `
-                        position: fixed;
-                        left: ${rect.left}px;
-                        top: ${rect.top}px;
-                        width: ${rect.width}px;
-                        height: ${rect.height}px;
-                        background-color: rgba(255, 255, 0, 0.1);
-                        pointer-events: none;
-                        z-index: 2147483646;
-                        color: transparent;
-                        user-select: none;
-                    `;
-                    
-                    document.body.appendChild(overlay);
-                    return { word, element: overlay };
+                    hoveredWord = word;
+                    hoveredOverlay = overlay;
                 }
-                
-                pos = wordStart + word.length;
+            });
+
+            if (hoveredWord && hoveredOverlay) {
+                return { word: hoveredWord, element: hoveredOverlay };
             }
         } catch (error) {
             logger.log('wordTooltip', 'Error in getWordAtPosition', error);
         }
 
         return null;
+    }
+
+    private getTextNodeAtPoint(x: number, y: number): { node: Text, offset: number } | null {
+        const range = document.createRange();
+        const textNodes: Text[] = [];
+        
+        // 모든 텍스트 노드 수집
+        const walker = document.createTreeWalker(
+            document.body,
+            NodeFilter.SHOW_TEXT,
+            null
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+            textNodes.push(node as Text);
+        }
+
+        // 마우스 위치에 있는 텍스트 노드 찾기
+        for (const textNode of textNodes) {
+            range.selectNodeContents(textNode);
+            const rects = range.getClientRects();
+            
+            for (let i = 0; i < rects.length; i++) {
+                const rect = rects[i];
+                if (x >= rect.left && x <= rect.right && 
+                    y >= rect.top && y <= rect.bottom) {
+                    
+                    // 텍스트 노드 내에의 오프셋 계산
+                    const offset = this.getOffsetAtPoint(textNode, x - rect.left);
+                    return { node: textNode, offset };
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private getOffsetAtPoint(node: Text, x: number): number {
+        const range = document.createRange();
+        const text = node.textContent || '';
+        let low = 0;
+        let high = text.length;
+
+        while (low < high) {
+            const mid = Math.floor((low + high) / 2);
+            range.setStart(node, 0);
+            range.setEnd(node, mid);
+            const rect = range.getBoundingClientRect();
+
+            if (x > rect.width) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        return low;
+    }
+
+    private createOverlay(rect: DOMRect): HTMLElement {
+        const overlay = document.createElement('span');
+        overlay.className = 'word-highlight';
+        overlay.style.cssText = `
+            position: fixed;
+            left: ${rect.left}px;
+            top: ${rect.top}px;
+            width: ${rect.width}px;
+            height: ${rect.height}px;
+            background-color: rgba(255, 255, 0, 0.1);
+            z-index: 2147483646;
+            color: transparent;
+            user-select: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        `;
+
+        // 호버 효과 추가
+        overlay.addEventListener('mouseenter', () => {
+            overlay.style.backgroundColor = 'rgba(255, 255, 0, 0.2)';
+        });
+
+        overlay.addEventListener('mouseleave', () => {
+            overlay.style.backgroundColor = 'rgba(255, 255, 0, 0.1)';
+        });
+
+        return overlay;
     }
 
     private getElementText(element: HTMLElement): string {
